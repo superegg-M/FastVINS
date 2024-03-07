@@ -9,13 +9,13 @@
 #include "vertex_motion.h"
 
 void graph_optimization::EdgeReprojection::compute_residual() {
-    double inv_depth_i = _verticies[0]->get_parameters()[0];
+    double inv_depth_i = _vertices[0]->get_parameters()[0];
 
-    const auto &params_i = _verticies[1]->get_parameters();
+    const auto &params_i = _vertices[1]->get_parameters();
     Vec3 t_i = params_i.head<3>();
     Qd q_i {params_i[6], params_i[3], params_i[4], params_i[5]};
 
-    const auto &params_j = _verticies[2]->get_parameters();
+    const auto &params_j = _vertices[2]->get_parameters();
     Vec3 t_j = params_j.head<3>();
     Qd q_j = {params_j[6], params_j[3], params_j[4], params_j[5]};
 
@@ -32,14 +32,14 @@ void graph_optimization::EdgeReprojection::compute_residual() {
 void graph_optimization::EdgeReprojection::compute_jacobians() {
     Mat33 R_ic = _qic.toRotationMatrix();
 
-    double inv_depth_i = _verticies[0]->get_parameters()[0];
+    double inv_depth_i = _vertices[0]->get_parameters()[0];
 
-    const auto &params_i = _verticies[1]->get_parameters();
+    const auto &params_i = _vertices[1]->get_parameters();
     Vec3 t_i = params_i.head<3>();
     Qd q_i {params_i[6], params_i[3], params_i[4], params_i[5]};
     Mat33 R_i = q_i.toRotationMatrix();
 
-    const auto &params_j = _verticies[2]->get_parameters();
+    const auto &params_j = _vertices[2]->get_parameters();
     Vec3 t_j = params_j.head<3>();
     Qd q_j = {params_j[6], params_j[3], params_j[4], params_j[5]};
     Mat33 R_j = q_j.toRotationMatrix();
@@ -79,9 +79,9 @@ void graph_optimization::EdgeReprojection::compute_jacobians() {
 }
 
 void graph_optimization::EdgeReprojectionPoint3d::compute_residual() {
-    Vec3 p_world = _verticies[0]->get_parameters();
+    Vec3 p_world = _vertices[0]->get_parameters();
 
-    const auto &params_i = _verticies[1]->get_parameters();
+    const auto &params_i = _vertices[1]->get_parameters();
     Vec3 t_i = params_i.head<3>();
     Qd q_i {params_i[6], params_i[3], params_i[4], params_i[5]};
 
@@ -96,9 +96,9 @@ void graph_optimization::EdgeReprojectionPoint3d::compute_residual() {
 void graph_optimization::EdgeReprojectionPoint3d::compute_jacobians() {
     Mat33 R_ic = _qic.toRotationMatrix();
 
-    Vec3 p_world = _verticies[0]->get_parameters();
+    Vec3 p_world = _vertices[0]->get_parameters();
 
-    const auto &params_i = _verticies[1]->get_parameters();
+    const auto &params_i = _vertices[1]->get_parameters();
     Vec3 t_i = params_i.head<3>();
     Qd q_i {params_i[6], params_i[3], params_i[4], params_i[5]};
     Mat33 R_i = q_i.toRotationMatrix();
