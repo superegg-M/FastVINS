@@ -13,5 +13,19 @@ namespace graph_optimization {
         _id = _global_vertex_id++;
     }
 
+    void Vertex::save_parameters() {
+        saved_parameters = true;
+        _parameters_backup = _parameters;
+    }
+
+    bool Vertex::load_parameters() {
+        if (saved_parameters) {
+            saved_parameters = false;
+            _parameters = _parameters_backup;
+            return true;
+        }
+        return false;
+    }
+
 }
 

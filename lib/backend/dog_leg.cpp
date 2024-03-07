@@ -17,8 +17,14 @@ namespace graph_optimization {
         static double eps = 1e-12;
         static unsigned long failure_cnt_max = 10;
 
-        double current_chi2 = get_robust_chi2();
+        // 初始化
+        make_hessian();
+        update_residual();
+        update_chi2();
+
+        double current_chi2 = get_chi2();
         double new_chi2 = current_chi2;
+        double stop_threshold = 1e-8 * current_chi2;          // 迭代条件为 误差下降 1e-8 倍
         std::cout << "init: " << " , chi2 = " << current_chi2 << std::endl;
 
         bool is_good_to_stop = false;
@@ -28,8 +34,8 @@ namespace graph_optimization {
             ++iter;
 
             // 计算 h_sd 和 h_gn
-            calculate_steepest_descent(_delta_x_sd);
-            bool is_gn_valid = calculate_gauss_newton(_delta_x_gn);
+            one_step_steepest_descent(_delta_x_sd);
+            bool is_gn_valid = one_step_gauss_newton(_delta_x_gn);
 
             bool is_good_step = false;
             unsigned long failure_cnt = 0;
@@ -69,46 +75,69 @@ namespace graph_optimization {
                     }
                 }
 
+                // 如果 delta_x 很小则退出
+                if (delta_x.squaredNorm() <= eps) {
+                    is_good_to_stop = true;
+                    std::cout << "Good: stop iteration due to (delta_x.squaredNorm() <= eps)." << std::endl;
+                    break;
+                }
+
                 // x = x + dx
                 update_states(delta_x);
+                update_residual();
+                update_chi2();
 
-                new_chi2 = get_robust_chi2();
+                new_chi2 = get_chi2();
                 double nonlinear_gain = current_chi2 - new_chi2;
-                double linear_gain = -(0.5 * delta_x.dot(_hessian * delta_x) + delta_x.dot(_b));
+                double linear_gain = -0.5 * delta_x.dot(_hessian * delta_x) + delta_x.dot(_b);
                 if (fabs(linear_gain) < eps) {
                     linear_gain = eps;
                 }
 
                 double rho = nonlinear_gain / linear_gain;
                 if (rho < 0.25) {
-                    _delta = 0.25 * _delta;
+                    _delta = std::max(0.25 * _delta, _delta_min);
                 } else if (rho > 0.75 && clip_delta_x) {
                     _delta = std::min(2. * _delta, _delta_max);
                 }
 
-                if (rho > 0.) {
+                if (rho > 0. && isfinite(new_chi2)) {
                     is_good_step = true;
 
                     // 如果chi2的减少已经很少了, 则可以认为x已经在最优点, 所以无需在迭代
                     if (rho < eps) {
                         is_good_to_stop = true;
                         std::cout << "Good: stop iteration due to (rho < eps)." << std::endl;
-                    } else {
-                        current_chi2 = new_chi2;
-                        make_hessian();
+                        break;
                     }
+                    // chi2的变化率小于1e-3
+                    if (fabs(new_chi2 - current_chi2) < 1e-3 * current_chi2) {
+                        is_good_to_stop = true;
+                        std::cout << "Good: stop iteration due to (fabs(new_chi2 - current_chi2) < 1e-3 * current_chi2)." << std::endl;
+                        break;
+                    }
+                    // chi2小于最初的chi2一定的倍率
+                    if (current_chi2 < stop_threshold) {
+                        is_good_to_stop = true;
+                        std::cout << "Good: stop iteration due to (current_chi2 < stop_threshold)." << std::endl;
+                        break;
+                    }
+
+                    current_chi2 = new_chi2;
+                    make_hessian();
                 } else {
                     is_good_step = false;
                     ++failure_cnt;
 
                     // 回退: x = x - dx
                     rollback_states(delta_x);
-                }
 
-                // 若一直找不到合适的delta, 则直接结束迭代
-                if (failure_cnt > failure_cnt_max) {
-                    is_bad_to_stop = true;
-                    std::cout << "Bad: stop iteration due to (failure_cnt > failure_cnt_max)." << std::endl;
+                    // 若一直找不到合适的delta, 则直接结束迭代
+                    if (failure_cnt > failure_cnt_max) {
+                        is_bad_to_stop = true;
+                        std::cout << "Bad: stop iteration due to (failure_cnt > failure_cnt_max)." << std::endl;
+                        break;
+                    }
                 }
             } while (!is_good_step && !is_bad_to_stop && !is_good_to_stop);
 

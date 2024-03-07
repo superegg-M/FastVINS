@@ -41,6 +41,9 @@ namespace graph_optimization {
         /// 设置参数值
         void set_parameters(const VecX &params) { _parameters = params; }
 
+        void save_parameters();
+        bool load_parameters();
+
         /// 加法，可重定义
         /// 默认是向量加
         virtual void plus(const VecX &delta) { _parameters += delta; }
@@ -61,7 +64,9 @@ namespace graph_optimization {
         bool is_fixed() const { return _fixed; }
 
     protected:
+        bool saved_parameters {false};
         VecX _parameters;   ///< 实际存储的变量值
+        VecX _parameters_backup; // 每次迭代优化中对参数进行备份，用于回退
         unsigned long _local_dimension;   ///< 局部参数化维度
         unsigned long _id;  ///< 顶点的id，自动生成
 

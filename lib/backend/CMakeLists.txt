@@ -1,4 +1,5 @@
-add_library(backend eigen_types.h vertex.cpp edge.cpp problem.cpp steepest_descent.cpp gauss_newton.cpp levenberg_marquardt.cpp dog_leg.cpp loss_function.cpp)
+add_library(backend eigen_types.h vertex.cpp edge.cpp problem.cpp steepest_descent.cpp gauss_newton.cpp
+        levenberg_marquardt.cpp dog_leg.cpp loss_function.cpp problem_slam.cpp)
 
 target_include_directories(backend PUBLIC ${GRAPH_OPTIMIZATION_SOURCE_DIR})
 

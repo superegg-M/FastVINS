@@ -14,9 +14,9 @@
 using namespace std;
 
 namespace graph_optimization {
-    Problem::Problem(ProblemType problem_type) : _problem_type(problem_type) {
+    Problem::Problem() {
         logout_vector_size();
-        _verticies_marg.clear();
+        _vertices_marg.clear();
     }
 
     bool Problem::add_vertex(const std::shared_ptr<Vertex>& vertex) {
@@ -87,86 +87,42 @@ namespace graph_optimization {
         return true;
     }
 
-    double Problem::get_robust_chi2() const {
-        double chi2 = 0.;
-        for (auto &edge: _edges) {
-            chi2 += edge.second->robust_chi2();
-        }
-        return chi2;
-    }
-
-    bool Problem::solve(int iterations) {
+    bool Problem::solve(unsigned long iterations) {
         if (_edges.empty() || _vertices.empty()) {
             std::cerr << "\nCannot solve problem without edges or vertices" << std::endl;
             return false;
         }
 
         TicToc t_solve;
-        // 统计优化变量的维数: _ordering_generic，为构建 H 矩阵做准备
-        set_ordering();
-        // 遍历edge, 构建 H = J^T * J 矩阵
-        make_hessian();
-        // LM 初始化
-        compute_lambda_init_LM();
-        // LM 算法迭代求解
-        bool stop = false;
-        int iter = 0;
-        double last_chi = _current_chi;
-        while (!stop && (iter < iterations)) {
-            bool one_step_success = false;
-            int false_cnt = 0;
-            while (!one_step_success) {  // 不断尝试 Lambda, 直到成功迭代一步
-                // setLambda
-//                add_lambda_to_hessian_LM();
-                // 第四步，解线性方程 (H + λI) X = B
-                solve_linear_system(_delta_x);
-                //
-//                remove_lambda_hessian_LM();
 
-                // 优化退出条件1： delta_x_ 很小则退出
-                if (_delta_x.squaredNorm() <= 1e-12 || false_cnt > 10) {
-                    stop = true;
-                    break;
-                }
+        initialize_ordering(); // 统计优化变量的维数: _ordering_generic，为构建 hessian 矩阵做准备
 
-                // 更新状态量 X = X+ delta_x
-                update_states(_delta_x);
-                // 判断当前步是否可行以及 LM 的 lambda 怎么更新
-                one_step_success = is_good_step_in_LM();
-                // 后续处理，
-                if (one_step_success) {
-                    // 在新线性化点 构建 hessian
-                    make_hessian();
-                    // TODO:: 这个判断条件可以丢掉，条件 b_max <= 1e-12 很难达到，这里的阈值条件不应该用绝对值，而是相对值
-//                double b_max = 0.0;
-//                for (int i = 0; i < b_.size(); ++i) {
-//                    b_max = max(fabs(b_(i)), b_max);
-//                }
-//                // 优化退出条件2： 如果残差 b_max 已经很小了，那就退出
-//                stop = (b_max <= 1e-12);
-                    false_cnt = 0;
-                } else {
-                    false_cnt++;
-                    rollback_states(_delta_x);   // 误差没下降，回滚
-                }
-            }
-            iter++;
-
-            // 优化退出条件3： currentChi_ 跟第一次的chi2相比，下降了 1e6 倍则退出
-            if (fabs(last_chi - _current_chi) < 1e-3 * last_chi || _current_chi < _stop_threshold_LM) {
-                std::cout << "fabs(last_chi_ - currentChi_) < 1e-3 * last_chi_ || currentChi_ < stopThresholdLM_" << std::endl;
-                stop = true;
-            }
-            last_chi = _current_chi;
-
-            std::cout << "iter: " << iter << " , chi= " << _current_chi << " , lambda= " << _current_lambda << std::endl;
+        bool flag;
+        switch (_solver_type) {
+            case SolverType::STEEPEST_DESCENT:
+                flag = calculate_steepest_descent(_delta_x_sd, iterations);
+                break;
+            case SolverType::GAUSS_NEWTON:
+                flag = calculate_gauss_newton(_delta_x_gn, iterations);
+                break;
+            case SolverType::LEVENBERG_MARQUARDT:
+                flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
+                break;
+            case SolverType::DOG_LEG:
+                flag = calculate_dog_leg(_delta_x_dl, iterations);
+                break;
+            default:
+                flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
+                break;
         }
+
         std::cout << "problem solve cost: " << t_solve.toc() << " ms" << std::endl;
-        std::cout << "   makeHessian cost: " << _t_hessian_cost << " ms" << std::endl;
-        return true;
+        std::cout << "make_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
+
+        return flag;
     }
 
-    void Problem::set_ordering() {
+    void Problem::initialize_ordering() {
         // 每次重新计数
         _ordering_poses = 0;
         _ordering_landmarks = 0;
@@ -525,9 +481,7 @@ namespace graph_optimization {
         }
     }
 
-
-
-    void Problem::schur_SBA(VecX &delta_x) {
+    bool Problem::schur_SBA(VecX &delta_x) {
         if (delta_x.rows() != (_ordering_poses + _ordering_landmarks)) {
             delta_x.resize(_ordering_poses + _ordering_landmarks, 1);
         }
@@ -547,6 +501,9 @@ namespace graph_optimization {
         for (int i = 0; i < marg_size; ++i) {   // LM Method
             // Hll(i, i) += _current_lambda;
             Hll(i, i) += _diag_lambda(i + reserve_size);
+            if (Hll(i, i) < _diag_lambda(i + reserve_size)) {
+                Hll(i, i) = _diag_lambda(i + reserve_size);
+            }
         }
 //        MatXX Hpl = _hessian.block(0, reserve_size, reserve_size, marg_size);
         MatXX Hlp = _hessian.block(reserve_size, 0, marg_size, reserve_size);
@@ -563,6 +520,9 @@ namespace graph_optimization {
                 temp_b(idx) = bll(idx) / Hll(idx, idx);
             } else {
                 auto &&Hll_ldlt = Hll.block(idx, idx, size, size).ldlt();
+                if (Hll_ldlt.info() != Eigen::Success) {
+                    return false;
+                }
                 temp_H.block(idx, 0, size, reserve_size) = Hll_ldlt.solve(Hlp.block(idx, 0, size, reserve_size));
                 temp_b.segment(idx, size) = Hll_ldlt.solve(bll.segment(idx, size));
             }
@@ -585,7 +545,7 @@ namespace graph_optimization {
 #else
         auto &&H_pp_schur_ldlt = _h_pp_schur.ldlt();
         if (H_pp_schur_ldlt.info() != Eigen::Success) {
-//            return false;   // H_pp_schur不是正定矩阵
+            return false;   // H_pp_schur不是正定矩阵
         }
         delta_x_pp =  H_pp_schur_ldlt.solve(_b_pp_schur);
 #endif
@@ -596,26 +556,37 @@ namespace graph_optimization {
         VecX delta_x_ll(marg_size);
         delta_x_ll = temp_b - temp_H * delta_x_pp;
         _delta_x.tail(marg_size) = delta_x_ll;
+
+        return true;
     }
 
     /*
     * Solve Hx = b, we can use PCG iterative method or use sparse Cholesky
     */
-    void Problem::solve_linear_system(VecX &delta_x) {
+    bool Problem::solve_linear_system(VecX &delta_x) {
         if (_problem_type == ProblemType::GENERIC_PROBLEM) {
             MatXX H = _hessian;
-            for (unsigned i = 0; i < _hessian.rows(); ++i) {
-                H(i, i) += _current_lambda;
+//            for (unsigned i = 0; i < _hessian.rows(); ++i) {
+//                H(i, i) += _current_lambda;
+//            }
+            H += _diag_lambda.asDiagonal();
+            auto && H_ldlt = H.ldlt();
+            if (H_ldlt.info() == Eigen::Success) {
+                delta_x = H_ldlt.solve(_b);
+                return true;
+            } else {
+                return false;
             }
-            delta_x = H.fullPivLu().solve(_b);
         } else {
             // SLAM 问题采用舒尔补的计算方式
-            schur_SBA(delta_x);
+            return schur_SBA(delta_x);
         }
     }
 
     void Problem::update_states(const VecX &delta_x) {
         for (auto &vertex: _vertices) {
+            vertex.second->save_parameters();
+
             ulong idx = vertex.second->ordering_id();
             ulong dim = vertex.second->local_dimension();
             VecX delta = delta_x.segment(idx, dim);
@@ -629,34 +600,32 @@ namespace graph_optimization {
         _b_prior -= _h_prior * delta_x.head(_ordering_poses);
     }
 
+    void Problem::update_residual() {
+        for (auto &edge: _edges) {
+            edge.second->compute_residual();
+        }
+    }
+
+    void Problem::update_chi2() {
+        _chi2 = 0.;
+        for (auto &edge: _edges) {
+            _chi2 += edge.second->robust_chi2();
+        }
+        _chi2 *= 0.5;
+    }
+
     void Problem::rollback_states(const VecX &delta_x) {
         for (auto &vertex: _vertices) {
             ulong idx = vertex.second->ordering_id();
             ulong dim = vertex.second->local_dimension();
             VecX delta = delta_x.segment(idx, dim);
 
-            // 之前的增量加了后使得损失函数增加了，我们应该不要这次迭代结果，所以把之前加上的量减去。
-            vertex.second->plus(-delta);
+//            // 之前的增量加了后使得损失函数增加了，我们应该不要这次迭代结果，所以把之前加上的量减去。
+//            vertex.second->plus(-delta);
+            vertex.second->load_parameters();
         }
 
         _b_prior = _b_prior_bp;
-    }
-
-    void Problem::add_lambda_to_hessian_LM() {
-        ulong size = _hessian.cols();
-        assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
-        for (ulong i = 0; i < size; ++i) {
-            _hessian(i, i) += _current_lambda;
-        }
-    }
-
-    void Problem::remove_lambda_hessian_LM() {
-        ulong size = _hessian.cols();
-        assert(_hessian.rows() == _hessian.cols() && "Hessian is not square");
-        // TODO:: 这里不应该减去一个，数值的反复加减容易造成数值精度出问题？而应该保存叠加lambda前的值，在这里直接赋值
-        for (ulong i = 0; i < size; ++i) {
-            _hessian(i, i) -= _current_lambda;
-        }
     }
 
     void Problem::save_hessian_diagonal_elements() {
@@ -682,34 +651,37 @@ namespace graph_optimization {
 *  the jacobi PCG method
 *
 */
-    VecX Problem::PCG_solver(const MatXX &A, const VecX &b, int maxIter) {
+    VecX Problem::PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter) {
         assert(A.rows() == A.cols() && "PCG solver ERROR: A is not a square matrix");
-        int rows = b.rows();
-        int n = maxIter < 0 ? rows : maxIter;
+        unsigned long rows = b.rows();
+        unsigned long n = max_iter ? max_iter : rows;
+        double threshold = 1e-6 * b.norm();
+
         VecX x(VecX::Zero(rows));
-        MatXX M_inv = A.diagonal().asDiagonal().inverse();
-        VecX r0(b);  // initial r = b - A*0 = b
-        VecX z0 = M_inv * r0;
-        VecX p(z0);
-        VecX w = A * p;
-        double r0z0 = r0.dot(z0);
-        double alpha = r0z0 / p.dot(w);
-        VecX r1 = r0 - alpha * w;
-        int i = 0;
-        double threshold = 1e-6 * r0.norm();
-        while (r1.norm() > threshold && i < n) {
-            i++;
-            VecX z1 = M_inv * r1;
-            double r1z1 = r1.dot(z1);
-            double beta = r1z1 / r0z0;
-            z0 = z1;
-            r0z0 = r1z1;
-            r0 = r1;
-            p = beta * p + z1;
-            w = A * p;
-            alpha = r1z1 / p.dot(w);
+        VecX M = A.diagonal();
+        VecX r(-b);
+        VecX y(r.array() / M.array());
+        VecX p(-y);
+        VecX Ap = A * p;
+        double ry = r.dot(y);
+        double ry_prev = ry;
+        double alpha = ry / p.dot(Ap);
+        double beta;
+        x += alpha * p;
+        r += alpha * Ap;
+
+        unsigned long i = 0;
+        while (r.norm() > threshold && ++i < n) {
+            y = r.array() / M.array();
+            ry = r.dot(y);
+            beta = ry / ry_prev;
+            ry_prev = ry;
+            p = -y + beta * p;
+
+            Ap = A * p;
+            alpha = ry / p.dot(Ap);
             x += alpha * p;
-            r1 -= alpha * w;
+            r += alpha * Ap;
         }
         return x;
     }
@@ -783,7 +755,7 @@ namespace graph_optimization {
      * */
     bool Problem::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
         // 重新计算一篇ordering
-        set_ordering();
+        initialize_ordering();
         ulong state_dim = _ordering_poses;
 
         // 所需被marginalize的edge
