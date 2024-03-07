@@ -37,7 +37,7 @@ namespace graph_optimization {
          * @param vertex 对应的vertex对象
          */
         bool add_vertex(const std::shared_ptr<Vertex>& vertex) {
-            _verticies.emplace_back(vertex);
+            _vertices.emplace_back(vertex);
             return true;
         }
 
@@ -47,26 +47,26 @@ namespace graph_optimization {
          * @return
          */
         bool set_vertices(const std::vector<std::shared_ptr<Vertex>> &vertices) {
-            _verticies = vertices;
+            _vertices = vertices;
             return true;
         }
 
         bool set_vertex(const std::shared_ptr<Vertex> &vertex, unsigned long which_vertex) {
-            if (which_vertex < _verticies.size()) {
-                _verticies[which_vertex] = vertex;
+            if (which_vertex < _vertices.size()) {
+                _vertices[which_vertex] = vertex;
                 return true;
             }
             return false;
         }
 
         /// 返回第i个顶点
-        std::shared_ptr<Vertex> get_vertex(unsigned long i) { return _verticies[i]; }
+        std::shared_ptr<Vertex> get_vertex(unsigned long i) { return _vertices[i]; }
 
         /// 返回所有顶点
-        const std::vector<std::shared_ptr<Vertex>> &vertices() const { return _verticies; }
+        const std::vector<std::shared_ptr<Vertex>> &vertices() const { return _vertices; }
 
         /// 返回关联顶点个数
-        size_t num_vertices() const { return _verticies.size(); }
+        size_t num_vertices() const { return _vertices.size(); }
 
         /// 返回边的类型信息，在子类中实现
         virtual std::string type_info() const = 0;
@@ -77,10 +77,12 @@ namespace graph_optimization {
         /// 计算雅可比，由子类实现
         virtual void compute_jacobians() = 0;
 
-        /// 计算平方误差，会乘以信息矩阵
-        double chi2() const;
+        void compute_chi2();
 
-        double robust_chi2() const;
+        /// 计算平方误差，会乘以信息矩阵
+        double get_chi2() const { return _chi2; }
+
+        double get_robust_chi2() const { return _rho[0]; }
 
         /// 返回残差
         const VecX &residual() const { return _residual; }
@@ -113,9 +115,11 @@ namespace graph_optimization {
         unsigned long _id;  ///< edge id
 //        unsigned long _ordering_id;   ///< edge id in problem
         std::vector<std::string> _vertices_types;  ///< 各顶点类型信息，用于debug
-        std::vector<std::shared_ptr<Vertex>> _verticies; ///< 该边对应的顶点
+        std::vector<std::shared_ptr<Vertex>> _vertices; ///< 该边对应的顶点
         VecX _residual;                 ///< 残差
         std::vector<MatXX> _jacobians;  ///< 雅可比，每个顶点对应一个雅可比, 每个雅可比得维度是 residual x vertex.local_dimension
+        double _chi2 {0};               ///< e^2
+        Vec3 _rho;                      ///< rho(e^2), rho'(e^2), rho''(e^2)
         MatXX _information;             ///< 信息矩阵
         MatXX _sqrt_information;        ///< 信息矩阵开方
         VecX _observation;              ///< 观测信息

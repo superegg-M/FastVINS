@@ -11,7 +11,7 @@ namespace graph_optimization {
 
     Edge::Edge(unsigned long residual_dimension, unsigned long num_vertices, const std::vector<std::string> &vertices_types, unsigned loss_function_type) {
         _residual.resize(residual_dimension, 1);
-        _verticies.reserve(num_vertices);
+        _vertices.reserve(num_vertices);
         if (!vertices_types.empty()) {
             _vertices_types = vertices_types;
         }
@@ -39,41 +39,32 @@ namespace graph_optimization {
         }
     }
 
-    double Edge::chi2() const {
-        // TODO::  we should not Multiply information here, because we have computed Jacobian = sqrt_info * Jacobian
-        return _residual.transpose() * _information * _residual;
-//        return _residual.squaredNorm();   // 当计算 residual 的时候已经乘以了 sqrt_info, 这里不要再乘
-    }
-
-    double Edge::robust_chi2() const {
-        double e2 = chi2();
-        auto &&rho = _loss_function->compute(e2);
-        return rho[0];
+    void Edge::compute_chi2() {
+        _chi2 = _residual.transpose() * _information * _residual;
+        _rho = _loss_function->compute(_chi2);
     }
 
     void Edge::robust_information(double &drho, MatXX &info) const {
-        double e2 = chi2();
-        auto &&rho = _loss_function->compute(e2);
         VecX error = _sqrt_information * _residual;
 
         MatXX robust_info(_information.rows(), _information.cols());
         robust_info.setIdentity();
-        robust_info *= rho[1];
-        if(rho[1] + 2 * rho[2] * e2 > 0.) {
-            robust_info += 2 * rho[2] * error * error.transpose();
+        robust_info *= _rho[1];
+        if(_rho[1] + 2 * _rho[2] * _chi2 > 0.) {
+            robust_info += 2 * _rho[2] * error * error.transpose();
         }
 
         info = robust_info * _information;
-        drho = rho[1];
+        drho = _rho[1];
     }
 
     bool Edge::check_valid() {
         if (!_vertices_types.empty()) {
             // check type info
-            for (size_t i = 0; i < _verticies.size(); ++i) {
-                if (_vertices_types[i] != _verticies[i]->type_info()) {
+            for (size_t i = 0; i < _vertices.size(); ++i) {
+                if (_vertices_types[i] != _vertices[i]->type_info()) {
                     std::cout << "Vertex type does not match, should be " << _vertices_types[i] <<
-                              ", but set to " << _verticies[i]->type_info() << std::endl;
+                              ", but set to " << _vertices[i]->type_info() << std::endl;
                     return false;
                 }
             }

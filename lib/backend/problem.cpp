@@ -26,33 +26,20 @@ namespace graph_optimization {
         }
         _vertices.insert(pair<unsigned long, shared_ptr<Vertex>>(vertex->id(), vertex));
 
-        if (_problem_type == ProblemType::SLAM_PROBLEM) {
-            if (is_pose_vertex(vertex)) {
-                resize_pose_hessian_when_adding_pose(vertex);
-            }
-        }
-
         return true;
     }
 
     bool Problem::remove_vertex(const std::shared_ptr<Vertex>& vertex) {
-        //check if the vertex is in map_verticies_
+        // 如果顶点不在顶点map中, 则返回false
         if (_vertices.find(vertex->id()) == _vertices.end()) {
             // LOG(WARNING) << "The vertex " << vertex->Id() << " is not in the problem!" << endl;
             return false;
         }
 
-        // 这里要 remove 该顶点对应的 edge.
+        // 若删除顶点, 则需要把顶点所连接的edge也删除
         auto &&edges = get_connected_edges(vertex);
         for (auto & edge : edges) {
             remove_edge(edge);
-        }
-
-        if (is_pose_vertex(vertex)) {
-            _idx_pose_vertices.erase(vertex->id());
-        }
-        else {
-            _idx_landmark_vertices.erase(vertex->id());
         }
 
         vertex->set_ordering_id(-1);      // used to debug
@@ -94,6 +81,10 @@ namespace graph_optimization {
         }
 
         TicToc t_solve;
+        _t_hessian_cost = 0.;
+        _t_jacobian_cost = 0.;
+        _t_chi2_cost = 0;
+        _t_residual_cost = 0.;
 
         initialize_ordering(); // 统计优化变量的维数: _ordering_generic，为构建 hessian 矩阵做准备
 
@@ -117,192 +108,27 @@ namespace graph_optimization {
         }
 
         std::cout << "problem solve cost: " << t_solve.toc() << " ms" << std::endl;
-        std::cout << "make_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
+        std::cout << "update_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
+        std::cout << "update_jacobian cost: " << _t_jacobian_cost << " ms" << std::endl;
+        std::cout << "update_chi2 cost: " << _t_chi2_cost << " ms" << std::endl;
+        std::cout << "update_residual cost: " << _t_residual_cost << " ms" << std::endl;
 
         return flag;
     }
 
     void Problem::initialize_ordering() {
         // 每次重新计数
-        _ordering_poses = 0;
-        _ordering_landmarks = 0;
         _ordering_generic = 0;
 
-        // Note:: _vertices 是 map 类型的, 顺序是按照 id 号排序的
+        // Note: _vertices 是 map 类型的, 顺序是按照 id 号排序的
         // 统计带估计的所有变量的总维度
         for (auto &vertex: _vertices) {
+            vertex.second->set_ordering_id(_ordering_generic);
             _ordering_generic += vertex.second->local_dimension();  // 所有的优化变量总维数
-
-            if (_problem_type == ProblemType::SLAM_PROBLEM) {    // 如果是 slam 问题，还要分别统计 pose 和 landmark 的维数，后面会对他们进行排序
-                add_ordering_SLAM(vertex.second);
-            }
-        }
-
-        if (_problem_type == ProblemType::SLAM_PROBLEM) {
-            // 这里要把 landmark 的 ordering 加上 pose 的数量，就保持了 landmark 在后,而 pose 在前
-            ulong all_pose_dimension = _ordering_poses;
-            for (auto &landmark_vertex : _idx_landmark_vertices) {
-                landmark_vertex.second->set_ordering_id(landmark_vertex.second->ordering_id() + all_pose_dimension);
-            }
         }
     }
 
-    void Problem::add_ordering_SLAM(const std::shared_ptr<Vertex>& v) {
-        if (is_pose_vertex(v)) {
-            v->set_ordering_id(_ordering_poses);
-            _idx_pose_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(v->id(), v));
-            _ordering_poses += v->local_dimension();
-        } else if (is_landmark_vertex(v)) {
-            v->set_ordering_id(_ordering_landmarks);
-            _idx_landmark_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(v->id(), v));
-            _ordering_landmarks += v->local_dimension();
-        }
-    }
-
-    void Problem::calculate_jacobian() {
-        TicToc t_h;
-
-        for (auto &edge: _edges) {
-            edge.second->compute_residual();
-            edge.second->compute_jacobians();
-
-//            double drho;
-//            MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-//            edge.second->robust_information(drho, robust_information);
-            // TODO: 应该在这里进行所有的information计算
-        }
-
-        _t_jacobian_cost += t_h.toc();
-    }
-
-    void Problem::calculate_negative_gradient() {
-        TicToc t_h;
-
-        ulong size = _ordering_generic;
-        VecX b(VecX::Zero(size));       ///< 负梯度
-
-        // TODO:: accelate, accelate, accelate
-//#ifdef USE_OPENMP
-//#pragma omp parallel for
-//#endif
-
-        // 遍历每个残差，并计算他们的雅克比，得到最后的 b = -J^T * f
-        for (auto &edge: _edges) {
-            auto &&jacobians = edge.second->jacobians();
-            auto &&verticies = edge.second->vertices();
-            assert(jacobians.size() == verticies.size());
-            for (size_t i = 0; i < verticies.size(); ++i) {
-                auto &&v_i = verticies[i];
-                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
-
-                auto &&jacobian_i = jacobians[i];
-                ulong index_i = v_i->ordering_id();
-                ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
-
-                MatXX JtW = jacobian_i.transpose() * robust_information;
-                b.segment(index_i, dim_i).noalias() -= drho * JtW * edge.second->residual();
-            }
-        }
-        _b = b;
-
-        // 叠加先验
-        if(_b_prior.rows() > 0) {
-            VecX b_prior_tmp = _b_prior;
-
-            /// 遍历所有 POSE 顶点，然后设置相应的先验维度为 0 .  fix 外参数, SET PRIOR TO ZERO
-            /// landmark 没有先验
-            for (const auto& vertex: _vertices) {
-                if (is_pose_vertex(vertex.second) && vertex.second->is_fixed() ) {
-                    ulong idx = vertex.second->ordering_id();
-                    ulong dim = vertex.second->local_dimension();
-                    b_prior_tmp.segment(idx,dim).setZero();
-//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
-                }
-            }
-            _b.head(_ordering_poses) += b_prior_tmp;
-        }
-
-        _t_gradient_cost += t_h.toc();
-    }
-
-    void Problem::calculate_hessian() {
-        TicToc t_h;
-
-        ulong size = _ordering_generic;
-        MatXX H(MatXX::Zero(size, size));       ///< Hessian矩阵
-
-        // TODO:: accelate, accelate, accelate
-//#ifdef USE_OPENMP
-//#pragma omp parallel for
-//#endif
-
-        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
-        for (auto &edge: _edges) {
-            auto &&jacobians = edge.second->jacobians();
-            auto &&verticies = edge.second->vertices();
-            assert(jacobians.size() == verticies.size());
-            for (size_t i = 0; i < verticies.size(); ++i) {
-                auto &&v_i = verticies[i];
-                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
-
-                auto &&jacobian_i = jacobians[i];
-                ulong index_i = v_i->ordering_id();
-                ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
-
-                MatXX JtW = jacobian_i.transpose() * robust_information;
-                for (size_t j = i; j < verticies.size(); ++j) {
-                    auto &&v_j = verticies[j];
-
-                    if (v_j->is_fixed()) continue;
-
-                    auto &&jacobian_j = jacobians[j];
-                    ulong index_j = v_j->ordering_id();
-                    ulong dim_j = v_j->local_dimension();
-
-                    assert(v_j->ordering_id() != -1);
-                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
-                    // 所有的信息矩阵叠加起来
-                    H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-                    }
-                }
-            }
-
-        }
-        _hessian = H;
-
-        // 叠加先验
-        if(_h_prior.rows() > 0) {
-            MatXX H_prior_tmp = _h_prior;
-
-            /// 遍历所有 POSE 顶点，然后设置相应的先验维度为 0 .  fix 外参数, SET PRIOR TO ZERO
-            /// landmark 没有先验
-            for (const auto& vertex: _vertices) {
-                if (is_pose_vertex(vertex.second) && vertex.second->is_fixed() ) {
-                    ulong idx = vertex.second->ordering_id();
-                    ulong dim = vertex.second->local_dimension();
-                    H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
-                    H_prior_tmp.block(0,idx, H_prior_tmp.rows(), dim).setZero();
-//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
-                }
-            }
-            _hessian.topLeftCorner(_ordering_poses, _ordering_poses) += H_prior_tmp;
-        }
-
-        _t_hessian_cost += t_h.toc();
-    }
-
-    void Problem::calculate_hessian_and_negative_gradient() {
+    void Problem::update_hessian() {
         TicToc t_h;
 
         ulong size = _ordering_generic;
@@ -316,86 +142,8 @@ namespace graph_optimization {
 
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
         for (auto &edge: _edges) {
-            auto &&jacobians = edge.second->jacobians();
-            auto &&verticies = edge.second->vertices();
-            assert(jacobians.size() == verticies.size());
-            for (size_t i = 0; i < verticies.size(); ++i) {
-                auto &&v_i = verticies[i];
-                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
-
-                auto &&jacobian_i = jacobians[i];
-                ulong index_i = v_i->ordering_id();
-                ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
-                edge.second->robust_information(drho, robust_information);
-
-                MatXX JtW = jacobian_i.transpose() * robust_information;
-                for (size_t j = i; j < verticies.size(); ++j) {
-                    auto &&v_j = verticies[j];
-
-                    if (v_j->is_fixed()) continue;
-
-                    auto &&jacobian_j = jacobians[j];
-                    ulong index_j = v_j->ordering_id();
-                    ulong dim_j = v_j->local_dimension();
-
-                    assert(v_j->ordering_id() != -1);
-                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
-                    // 所有的信息矩阵叠加起来
-                    H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
-                    }
-                }
-                b.segment(index_i, dim_i).noalias() -= drho * JtW * edge.second->residual();
-            }
-        }
-        _hessian = H;
-        _b = b;
-
-        // 叠加先验
-        if(_h_prior.rows() > 0) {
-            MatXX H_prior_tmp = _h_prior;
-            VecX b_prior_tmp = _b_prior;
-
-            /// 遍历所有 POSE 顶点，然后设置相应的先验维度为 0 .  fix 外参数, SET PRIOR TO ZERO
-            /// landmark 没有先验
-            for (const auto& vertex: _vertices) {
-                if (is_pose_vertex(vertex.second) && vertex.second->is_fixed() ) {
-                    ulong idx = vertex.second->ordering_id();
-                    ulong dim = vertex.second->local_dimension();
-                    H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
-                    H_prior_tmp.block(0,idx, H_prior_tmp.rows(), dim).setZero();
-                    b_prior_tmp.segment(idx,dim).setZero();
-//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
-                }
-            }
-            _hessian.topLeftCorner(_ordering_poses, _ordering_poses) += H_prior_tmp;
-            _b.head(_ordering_poses) += b_prior_tmp;
-        }
-
-        _t_hessian_cost += t_h.toc();
-    }
-
-    void Problem::make_hessian() {
-        TicToc t_h;
-
-        ulong size = _ordering_generic;
-        MatXX H(MatXX::Zero(size, size));       ///< Hessian矩阵
-        VecX b(VecX::Zero(size));       ///< 负梯度
-
-        // TODO:: accelate, accelate, accelate
-//#ifdef USE_OPENMP
-//#pragma omp parallel for
-//#endif
-
-        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
-        for (auto &edge: _edges) {
-            edge.second->compute_residual();
-            edge.second->compute_jacobians();
+//            edge.second->compute_residual();
+//            edge.second->compute_jacobians();
 
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
@@ -437,17 +185,23 @@ namespace graph_optimization {
         }
         _hessian = H;
         _b = b;
-        _t_hessian_cost += t_h.toc();
 
         // 叠加先验
+        add_prior_to_hessian();
+
+//        _delta_x = VecX::Zero(size);  // initial delta_x = 0_n;
+
+        _t_hessian_cost += t_h.toc();
+    }
+
+    void Problem::add_prior_to_hessian() {
         if(_h_prior.rows() > 0) {
             MatXX H_prior_tmp = _h_prior;
             VecX b_prior_tmp = _b_prior;
 
-            /// 遍历所有 POSE 顶点，然后设置相应的先验维度为 0 .  fix 外参数, SET PRIOR TO ZERO
-            /// landmark 没有先验
+            // 对所有没有被fix的顶点添加先验信息
             for (const auto& vertex: _vertices) {
-                if (is_pose_vertex(vertex.second) && vertex.second->is_fixed() ) {
+                if (vertex.second->is_fixed()) {
                     ulong idx = vertex.second->ordering_id();
                     ulong dim = vertex.second->local_dimension();
                     H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
@@ -456,11 +210,9 @@ namespace graph_optimization {
 //                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
                 }
             }
-            _hessian.topLeftCorner(_ordering_poses, _ordering_poses) += H_prior_tmp;
-            _b.head(_ordering_poses) += b_prior_tmp;
+            _hessian += H_prior_tmp;
+            _b += b_prior_tmp;
         }
-
-        _delta_x = VecX::Zero(size);  // initial delta_x = 0_n;
     }
 
     void Problem::initialize_lambda() {
@@ -481,105 +233,21 @@ namespace graph_optimization {
         }
     }
 
-    bool Problem::schur_SBA(VecX &delta_x) {
-        if (delta_x.rows() != (_ordering_poses + _ordering_landmarks)) {
-            delta_x.resize(_ordering_poses + _ordering_landmarks, 1);
-        }
-
-        /*
-         * [Hpp Hpl][dxp] = [bp]
-         * [Hlp Hll][dxl] = [bl]
-         *
-         * (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
-         * Hll * dxl = bl - Hlp * dxp
-         * */
-        ulong reserve_size = _ordering_poses;
-        ulong marg_size = _ordering_landmarks;
-
-        // 由于叠加了lambda, 所以能够保证Hll可逆
-        MatXX Hll = _hessian.block(reserve_size, reserve_size, marg_size, marg_size);
-        for (int i = 0; i < marg_size; ++i) {   // LM Method
-            // Hll(i, i) += _current_lambda;
-            Hll(i, i) += _diag_lambda(i + reserve_size);
-            if (Hll(i, i) < _diag_lambda(i + reserve_size)) {
-                Hll(i, i) = _diag_lambda(i + reserve_size);
-            }
-        }
-//        MatXX Hpl = _hessian.block(0, reserve_size, reserve_size, marg_size);
-        MatXX Hlp = _hessian.block(reserve_size, 0, marg_size, reserve_size);
-//        VecX bpp = _b.segment(0, reserve_size);
-        VecX bll = _b.segment(reserve_size, marg_size);
-
-        MatXX temp_H(MatXX::Zero(marg_size, reserve_size));  // Hll^-1 * Hpl^T
-        VecX temp_b(VecX::Zero(marg_size, 1));   // Hll^-1 * bl
-        for (const auto& landmark_vertex : _idx_landmark_vertices) {
-            ulong idx = landmark_vertex.second->ordering_id() - reserve_size;
-            ulong size = landmark_vertex.second->local_dimension();
-            if (size == 1) {
-                temp_H.row(idx) = Hlp.row(idx) / Hll(idx, idx);
-                temp_b(idx) = bll(idx) / Hll(idx, idx);
-            } else {
-                auto &&Hll_ldlt = Hll.block(idx, idx, size, size).ldlt();
-                if (Hll_ldlt.info() != Eigen::Success) {
-                    return false;
-                }
-                temp_H.block(idx, 0, size, reserve_size) = Hll_ldlt.solve(Hlp.block(idx, 0, size, reserve_size));
-                temp_b.segment(idx, size) = Hll_ldlt.solve(bll.segment(idx, size));
-            }
-        }
-
-        // (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
-        // 这里即使叠加了lambda, 也有可能因为数值精度的问题而导致 _h_pp_schur 不可逆
-        _h_pp_schur = _hessian.block(0, 0, reserve_size, reserve_size) - Hlp.transpose() * temp_H;
-        for (ulong i = 0; i < _ordering_poses; ++i) {
-            // _h_pp_schur(i, i) += _current_lambda;    // LM Method
-            _h_pp_schur(i, i) += _diag_lambda(i);
-        }
-        _b_pp_schur = _b.segment(0, reserve_size) - Hlp.transpose() * temp_b;
-
-        // Solve" Hpp * delta_x = bpp
-        VecX delta_x_pp(VecX::Zero(reserve_size));
-#ifdef USE_PCG_SOLVER
-        auto n_pcg = _h_pp_schur.rows() * 2;                       // 迭代次数
-        delta_x_pp = PCG_solver(_h_pp_schur, _b_pp_schur, n_pcg);
-#else
-        auto &&H_pp_schur_ldlt = _h_pp_schur.ldlt();
-        if (H_pp_schur_ldlt.info() != Eigen::Success) {
-            return false;   // H_pp_schur不是正定矩阵
-        }
-        delta_x_pp =  H_pp_schur_ldlt.solve(_b_pp_schur);
-#endif
-
-        _delta_x.head(reserve_size) = delta_x_pp;
-
-        // Hll * dxl = bl - Hlp * dxp
-        VecX delta_x_ll(marg_size);
-        delta_x_ll = temp_b - temp_H * delta_x_pp;
-        _delta_x.tail(marg_size) = delta_x_ll;
-
-        return true;
-    }
-
     /*
     * Solve Hx = b, we can use PCG iterative method or use sparse Cholesky
     */
     bool Problem::solve_linear_system(VecX &delta_x) {
-        if (_problem_type == ProblemType::GENERIC_PROBLEM) {
-            MatXX H = _hessian;
+        MatXX H = _hessian;
 //            for (unsigned i = 0; i < _hessian.rows(); ++i) {
 //                H(i, i) += _current_lambda;
 //            }
-            H += _diag_lambda.asDiagonal();
-            auto && H_ldlt = H.ldlt();
-            if (H_ldlt.info() == Eigen::Success) {
-                delta_x = H_ldlt.solve(_b);
-                return true;
-            } else {
-                return false;
-            }
+        H += _diag_lambda.asDiagonal();
+        auto && H_ldlt = H.ldlt();
+        if (H_ldlt.info() == Eigen::Success) {
+            delta_x = H_ldlt.solve(_b);
+            return true;
         } else {
-            // SLAM 问题采用舒尔补的计算方式
-            return schur_SBA(delta_x);
+            return false;
         }
     }
 
@@ -595,23 +263,48 @@ namespace graph_optimization {
             vertex.second->plus(delta);
         }
 
-        // update prior
-        _b_prior_bp = _b_prior;
-        _b_prior -= _h_prior * delta_x.head(_ordering_poses);
+        // 利用 delta_x 更新先验信息
+        update_prior(delta_x);
+    }
+
+    void Problem::update_prior(const VecX &delta_x) {
+        if (_b_prior.rows() > 0) {
+            _b_prior_bp = _b_prior;
+            _b_prior -= _h_prior * delta_x;
+        }
     }
 
     void Problem::update_residual() {
+        TicToc t_r;
+
         for (auto &edge: _edges) {
             edge.second->compute_residual();
         }
+
+        _t_residual_cost += t_r.toc();
+    }
+
+    void Problem::update_jacobian() {
+        TicToc t_j;
+
+        for (auto &edge: _edges) {
+            edge.second->compute_jacobians();
+        }
+
+        _t_jacobian_cost += t_j.toc();
     }
 
     void Problem::update_chi2() {
+        TicToc t_c;
+
         _chi2 = 0.;
         for (auto &edge: _edges) {
-            _chi2 += edge.second->robust_chi2();
+            edge.second->compute_chi2();
+            _chi2 += edge.second->get_robust_chi2();
         }
         _chi2 *= 0.5;
+
+        _t_chi2_cost += t_c.toc();
     }
 
     void Problem::rollback_states(const VecX &delta_x) {
@@ -653,6 +346,7 @@ namespace graph_optimization {
 */
     VecX Problem::PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter) {
         assert(A.rows() == A.cols() && "PCG solver ERROR: A is not a square matrix");
+        TicToc t_h;
         unsigned long rows = b.rows();
         unsigned long n = max_iter ? max_iter : rows;
         double threshold = 1e-6 * b.norm();
@@ -683,6 +377,8 @@ namespace graph_optimization {
             x += alpha * p;
             r += alpha * Ap;
         }
+
+        _t_PCG_solve_cost = t_h.toc();
         return x;
     }
 
@@ -690,25 +386,6 @@ namespace graph_optimization {
 //
 //    }
 
-    bool Problem::is_pose_vertex(const std::shared_ptr<Vertex>& v) {
-        string type = v->type_info();
-        return type == string("VertexPose") || type == string("VertexMotion");
-    }
-
-    bool Problem::is_landmark_vertex(const std::shared_ptr<Vertex>& v) {
-        string type = v->type_info();
-        return type == string("VertexPointXYZ") || type == string("VertexInverseDepth");
-    }
-
-    void Problem::resize_pose_hessian_when_adding_pose(const std::shared_ptr<Vertex>& v) {
-        unsigned size = _h_prior.rows() + v->local_dimension();
-        _h_prior.conservativeResize(size, size);
-        _b_prior.conservativeResize(size);
-
-        _b_prior.tail(v->local_dimension()).setZero();
-        _h_prior.rightCols(v->local_dimension()).setZero();
-        _h_prior.bottomRows(v->local_dimension()).setZero();
-    }
 
     void Problem::extend_prior_hessian_size(ulong dim) {
         ulong size = _h_prior.rows() + dim;
@@ -721,17 +398,12 @@ namespace graph_optimization {
     }
 
     bool Problem::check_ordering() {
-        if (_problem_type == ProblemType::SLAM_PROBLEM) {
-            unsigned long current_ordering = 0;
-            for (const auto& v: _idx_pose_vertices) {
-                assert(v.second->ordering_id() == current_ordering);
-                current_ordering += v.second->local_dimension();
+        unsigned long current_ordering = 0;
+        for (const auto &v : _vertices) {
+            if (v.second->ordering_id() != current_ordering) {
+                return false;
             }
-
-            for (const auto& v: _idx_landmark_vertices) {
-                assert(v.second->ordering_id() == current_ordering);
-                current_ordering += v.second->local_dimension();
-            }
+            current_ordering += v.second->local_dimension();
         }
         return true;
     }
@@ -748,191 +420,6 @@ namespace graph_optimization {
             edges.emplace_back(iter->second);
         }
         return edges;
-    }
-
-    /*
-     * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
-     * */
-    bool Problem::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
-        // 重新计算一篇ordering
-        initialize_ordering();
-        ulong state_dim = _ordering_poses;
-
-        // 所需被marginalize的edge
-        std::vector<shared_ptr<Edge>> marginalized_edges = get_connected_edges(vertex_pose);
-
-        // 所需被marginalize的landmark
-        ulong marginalized_landmark_size = 0;
-        std::unordered_map<unsigned long, shared_ptr<Vertex>> marginalized_landmark;  // O(1)查找
-        for (auto &edge : marginalized_edges) {
-            auto vertices_edge = edge->vertices();
-            for (auto &vertex : vertices_edge) {
-                if (is_landmark_vertex(vertex)
-                    && marginalized_landmark.find(vertex->id()) == marginalized_landmark.end()) {
-                    // 修改landmark的ordering_id, 方便hessian的计算
-                    vertex->set_ordering_id(state_dim + marginalized_landmark_size);
-                    marginalized_landmark.insert(make_pair(vertex->id(), vertex));
-                    marginalized_landmark_size += vertex->local_dimension();
-                }
-            }
-        }
-
-        // 计算所需marginalize的edge的hessian
-        ulong cols = state_dim + marginalized_landmark_size;
-        MatXX h_state_landmark(MatXX::Zero(cols, cols));
-        VecX b_state_landmark(VecX::Zero(cols));
-        for (auto &edge : marginalized_edges) {
-            edge->compute_residual();
-            edge->compute_jacobians();
-            auto &&jacobians = edge->jacobians();
-            auto &&vertices = edge->vertices();
-
-            assert(jacobians.size() == vertices.size());
-            for (size_t i = 0; i < vertices.size(); ++i) {
-                auto v_i = vertices[i];
-                auto jacobian_i = jacobians[i];
-                ulong index_i = v_i->ordering_id();
-                ulong dim_i = v_i->local_dimension();
-
-                double drho;
-                MatXX robust_information(edge->information().rows(), edge->information().cols());
-                edge->robust_information(drho, robust_information);
-
-                for (size_t j = i; j < vertices.size(); ++j) {
-                    auto v_j = vertices[j];
-                    auto jacobian_j = jacobians[j];
-                    ulong index_j = v_j->ordering_id();
-                    ulong dim_j = v_j->local_dimension();
-
-                    MatXX hessian = jacobian_i.transpose() * robust_information * jacobian_j;
-
-                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
-                    // 所有的信息矩阵叠加起来
-                    h_state_landmark.block(index_i, index_j, dim_i, dim_j) += hessian;
-                    if (j != i) {
-                        // 对称的下三角
-                        h_state_landmark.block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
-                    }
-                }
-                b_state_landmark.segment(index_i, dim_i) -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
-            }
-        }
-
-        // marginalize与边连接的landmark
-        MatXX h_state_schur;
-        VecX b_state_schur;
-        if (marginalized_landmark_size > 0) {
-//            MatXX Hss = h_state_landmark.block(0, 0, state_dim, state_dim);
-            MatXX Hll = h_state_landmark.block(state_dim, state_dim, marginalized_landmark_size, marginalized_landmark_size);
-            MatXX Hsl = h_state_landmark.block(0, state_dim, state_dim, marginalized_landmark_size);
-//            MatXX Hlp = h_state_landmark.block(state_dim, 0, marginalized_landmark_size, state_dim);
-            VecX bss = b_state_landmark.segment(0, state_dim);
-            VecX bll = b_state_landmark.segment(state_dim, marginalized_landmark_size);
-
-            MatXX temp_H(MatXX::Zero(marginalized_landmark_size, state_dim));  // Hll^-1 * Hsl^T
-            VecX temp_b(VecX::Zero(marginalized_landmark_size, 1));   // Hll^-1 * bl
-            for (const auto& landmark_vertex : marginalized_landmark) {
-                ulong idx = landmark_vertex.second->ordering_id() - state_dim;
-                ulong size = landmark_vertex.second->local_dimension();
-                if (size == 1) {
-                    temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
-                    temp_b(idx) = bll(idx) / Hll(idx, idx);
-                } else {
-                    auto Hmm_LUP = Hll.block(idx, idx, size, size).fullPivLu();
-                    temp_H.block(idx, 0, size, state_dim) = Hmm_LUP.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                    temp_b.segment(idx, size) = Hmm_LUP.solve(bll.segment(idx, size));
-                }
-            }
-
-            // (Hpp - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
-            h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - Hsl * temp_H;
-            b_state_schur = bss - Hsl * temp_b;
-        }
-
-        // 叠加之前的先验
-        if(_h_prior.rows() > 0) {
-            h_state_schur += _h_prior;
-            b_state_schur += _b_prior;
-        }
-
-        // 把需要marginalize的pose和motion的vertices移动到最下面
-        ulong marginalized_state_dim = 0;
-        auto move_vertex_to_bottom = [&](const std::shared_ptr<Vertex>& vertex) {
-            ulong idx = vertex->ordering_id();
-            ulong dim = vertex->local_dimension();
-            marginalized_state_dim += dim;
-
-            // 将 row i 移动矩阵最下面
-            Eigen::MatrixXd temp_rows = h_state_schur.block(idx, 0, dim, state_dim);
-            Eigen::MatrixXd temp_botRows = h_state_schur.block(idx + dim, 0, state_dim - idx - dim, state_dim);
-            h_state_schur.block(idx, 0, state_dim - idx - dim, state_dim) = temp_botRows;
-            h_state_schur.block(state_dim - dim, 0, dim, state_dim) = temp_rows;
-
-            // 将 col i 移动矩阵最右边
-            Eigen::MatrixXd temp_cols = h_state_schur.block(0, idx, state_dim, dim);
-            Eigen::MatrixXd temp_rightCols = h_state_schur.block(0, idx + dim, state_dim, state_dim - idx - dim);
-            h_state_schur.block(0, idx, state_dim, state_dim - idx - dim) = temp_rightCols;
-            h_state_schur.block(0, state_dim - dim, state_dim, dim) = temp_cols;
-
-            Eigen::VectorXd temp_b = b_state_schur.segment(idx, dim);
-            Eigen::VectorXd temp_btail = b_state_schur.segment(idx + dim, state_dim - idx - dim);
-            b_state_schur.segment(idx, state_dim - idx - dim) = temp_btail;
-            b_state_schur.segment(state_dim - dim, dim) = temp_b;
-        };
-        if (vertex_motion) {
-            move_vertex_to_bottom(vertex_motion);
-        }
-        move_vertex_to_bottom(vertex_pose);
-
-        // marginalize与边相连的所有pose和motion顶点
-        auto marginalize_bottom_vertex = [&](const std::shared_ptr<Vertex> &vertex) {
-            ulong marginalized_size = vertex->local_dimension();
-            ulong reserve_size = state_dim - marginalized_size;
-//            MatXX Hrr = h_state_schur.block(0, 0, reserve_size, reserve_size);
-            MatXX Hmm = h_state_schur.block(reserve_size, reserve_size, marginalized_size, marginalized_size);
-            MatXX Hrm = h_state_schur.block(0, reserve_size, reserve_size, marginalized_size);
-//            MatXX Hmr = h_state_schur.block(reserve_size, 0, marginalized_size, reserve_size);
-            VecX brr = b_state_schur.segment(0, reserve_size);
-            VecX bmm = b_state_schur.segment(reserve_size, marginalized_size);
-
-            MatXX temp_H(MatXX::Zero(marginalized_size, reserve_size));  // Hmm^-1 * Hrm^T
-            VecX temp_b(VecX::Zero(marginalized_size, 1));   // Hmm^-1 * bm
-            ulong size = vertex->local_dimension();
-            if (size == 1) {
-                temp_H = Hrm.transpose() / Hmm(0, 0);
-                temp_b = bmm / Hmm(0, 0);
-            } else {
-                auto Hmm_LUP = Hmm.fullPivLu();
-                temp_H = Hmm_LUP.solve(Hrm.transpose());
-                temp_b = Hmm_LUP.solve(bmm);
-            }
-
-            // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
-            h_state_schur = h_state_schur.block(0, 0, reserve_size, reserve_size) - Hrm * temp_H;
-            b_state_schur = brr - Hrm * temp_b;
-
-            state_dim = reserve_size;
-        };
-        marginalize_bottom_vertex(vertex_pose);
-        if (vertex_motion) {
-            marginalize_bottom_vertex(vertex_motion);
-        }
-
-        _h_prior = h_state_schur;
-        _b_prior = b_state_schur;
-
-        // 移除顶点
-        remove_vertex(vertex_pose);
-        if (vertex_motion) {
-            remove_vertex(vertex_motion);
-        }
-
-        // 移除路标
-        for (auto &landmark : marginalized_landmark) {
-            remove_vertex(landmark.second);
-        }
-
-        return true;
     }
 
     void Problem::logout_vector_size() {

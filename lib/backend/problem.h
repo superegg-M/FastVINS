@@ -34,15 +34,12 @@ namespace graph_optimization {
         explicit Problem();
         virtual ~Problem() = default;
 
-        bool add_vertex(const std::shared_ptr<Vertex>& vertex);
-        bool remove_vertex(const std::shared_ptr<Vertex>& vertex);
+        virtual bool add_vertex(const std::shared_ptr<Vertex>& vertex);
+        virtual bool remove_vertex(const std::shared_ptr<Vertex>& vertex);
         bool add_edge(const std::shared_ptr<Edge>& edge);
         bool remove_edge(const std::shared_ptr<Edge>& edge);
-        bool solve(unsigned long iterations);
-        bool marginalize(std::shared_ptr<Vertex> frameVertex,
-                         const std::vector<std::shared_ptr<Vertex>> &landmarkVerticies);    ///< 边缘化一个frame和以它为host的landmark
-        bool marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion);
         void extend_prior_hessian_size(ulong dim);
+        bool solve(unsigned long iterations);
 
     public:
         std::vector<std::shared_ptr<Edge>> get_connected_edges(const std::shared_ptr<Vertex>& vertex);  ///< 获取某个顶点连接到的边
@@ -60,41 +57,27 @@ namespace graph_optimization {
         void test_marginalize();
 
     protected:
-        void initialize_ordering();    ///< 设置各顶点的ordering_index
-        void make_hessian();    ///< 计算H, b, J, f
-        void initialize_lambda();   ///< 计算λ, 需要先计算出H
-        bool solve_linear_system(VecX &delta_x);    ///< 解: (H+λ)Δx = b
+        virtual void initialize_ordering();    ///< 设置各顶点的ordering_index
+        virtual bool check_ordering();  ///< 检查ordering是否正确
+        void update_states(const VecX &delta_x);    ///< x_bp = x, x = x + Δx, b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx
+        void rollback_states(const VecX &delta_x);  ///< x = x_bp, b_prior = b_prior_bp
+        virtual void update_prior(const VecX &delta_x); ///< b_prior_bp = b_prior, b_prior = b_prior - H_prior * Δx; 在update_states()中运行
+        void update_residual(); ///< 计算每条边的残差;      运行顺序必须遵循: update_state -> update_residual
+        void update_jacobian(); ///< 计算每条边的残差;      运行顺序必须遵循: update_residual -> update_jacobian
+        void update_chi2(); ///< 计算综合的chi2;           运行顺序必须遵循: update_residual -> update_chi2
+        void update_hessian();    ///< 计算H, b, J, f;    运行顺序必须遵循: update_jacobian -> update_hessian
+        virtual void add_prior_to_hessian();    ///< H = H + H_prior;   在make_hessian()时会运行
+        void initialize_lambda();   ///< 计算λ;   运行顺序必须遵循: update_hessian -> initialize_lambda
+        virtual bool solve_linear_system(VecX &delta_x);    ///< 解: (H+λ)Δx = b
         bool one_step_steepest_descent(VecX &delta_x);  ///< 计算: h_sd = alpha*g
-        bool one_step_gauss_newton(VecX &delta_x);  ///< 计算: h_gn = (H+λ)/g
+        bool one_step_gauss_newton(VecX &delta_x);  ///< 计算: h_gn = (H+λ)/g;   运行顺序必须遵循: update_hessian -> one_step_gauss_newton
         bool calculate_steepest_descent(VecX &delta_x, unsigned long iterations=10);
         bool calculate_gauss_newton(VecX &delta_x, unsigned long iterations=10);
         bool calculate_levenberg_marquardt(VecX &delta_x, unsigned long iterations=10);
         bool calculate_dog_leg(VecX &delta_x, unsigned long iterations=10);
 
-        /// set ordering for new vertex in slam problem
-        void add_ordering_SLAM(const std::shared_ptr<Vertex>& v);
-
-        void calculate_jacobian();
-        void calculate_negative_gradient();
-        void calculate_hessian();
-        void calculate_hessian_and_negative_gradient();
-
-        /// schur求解SBA
-        bool schur_SBA(VecX &delta_x);
-
-        void update_states(const VecX &delta_x);    ///< x_bp = x, x = x + Δx
-        void rollback_states(const VecX &delta_x);  ///< x = x_bp
-        void update_residual(); ///< 计算每条边的残差
-        void update_chi2(); ///< 计算综合的chi2
-
         /// 计算并更新Prior部分
         void compute_prior();
-
-        /// 在新增顶点后，需要调整几个hessian的大小
-        void resize_pose_hessian_when_adding_pose(const std::shared_ptr<Vertex>& v);
-
-        /// 检查ordering是否正确
-        bool check_ordering();
 
         void logout_vector_size();
 
@@ -102,14 +85,15 @@ namespace graph_optimization {
         void load_hessian_diagonal_elements();
 
         /// PCG 迭代线性求解器
-        static VecX PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter=0);
+        VecX PCG_solver(const MatXX &A, const VecX &b, unsigned long max_iter=0);
 
     protected:
         bool _debug = false;
         SolverType _solver_type {SolverType::DOG_LEG};
 
+        double _t_residual_cost = 0.;
+        double _t_chi2_cost = 0.;
         double _t_jacobian_cost = 0.;
-        double _t_gradient_cost = 0.;
         double _t_hessian_cost = 0.;
         double _t_PCG_solve_cost = 0.;
 
@@ -147,25 +131,6 @@ namespace graph_optimization {
         double _delta {100.};
         double _delta_min {1e-6};
         double _delta_max {1e6};
-
-        //
-        ProblemType _problem_type;
-
-        /// SBA的Pose部分
-        MatXX _h_pp_schur;
-        VecX _b_pp_schur;
-        // Heesian 的 Landmark 和 pose 部分
-        MatXX _h_pp;
-        VecX _b_pp;
-        MatXX _h_ll;
-        VecX _b_ll;
-
-        /// Ordering related
-        ulong _ordering_poses = 0;
-        ulong _ordering_landmarks = 0;
-
-        std::map<unsigned long, std::shared_ptr<Vertex>> _idx_pose_vertices;        // 以ordering排序的pose顶点
-        std::map<unsigned long, std::shared_ptr<Vertex>> _idx_landmark_vertices;    // 以ordering排序的landmark顶点
     };
 }
 

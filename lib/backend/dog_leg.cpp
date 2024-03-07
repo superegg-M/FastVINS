@@ -18,14 +18,15 @@ namespace graph_optimization {
         static unsigned long failure_cnt_max = 10;
 
         // 初始化
-        make_hessian();
         update_residual();
         update_chi2();
+        update_jacobian();
+        update_hessian();
 
         double current_chi2 = get_chi2();
         double new_chi2 = current_chi2;
         double stop_threshold = 1e-8 * current_chi2;          // 迭代条件为 误差下降 1e-8 倍
-        std::cout << "init: " << " , chi2 = " << current_chi2 << std::endl;
+        std::cout << "init: " << " , get_chi2 = " << current_chi2 << std::endl;
 
         bool is_good_to_stop = false;
         bool is_bad_to_stop = false;
@@ -124,7 +125,8 @@ namespace graph_optimization {
                     }
 
                     current_chi2 = new_chi2;
-                    make_hessian();
+                    update_jacobian();
+                    update_hessian();
                 } else {
                     is_good_step = false;
                     ++failure_cnt;
@@ -141,7 +143,7 @@ namespace graph_optimization {
                 }
             } while (!is_good_step && !is_bad_to_stop && !is_good_to_stop);
 
-            std::cout << "iter: " << iter << " , chi2 = " << current_chi2 << " , delta = " << _delta << std::endl;
+            std::cout << "iter: " << iter << " , get_chi2 = " << current_chi2 << " , delta = " << _delta << std::endl;
         } while (iter < iterations && !is_bad_to_stop && !is_good_to_stop);
 
         return !is_bad_to_stop;
