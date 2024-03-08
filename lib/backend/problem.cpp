@@ -10,6 +10,7 @@
 #include <lib/tic_toc/tic_toc.h>
 #include "problem.h"
 
+#define MULTIPLY_HESSIAN_USING_SELF_ADJOINT
 
 using namespace std;
 
@@ -231,6 +232,51 @@ namespace graph_optimization {
         for (int i = 0; i < _hessian.rows(); ++i) {
             _diag_lambda(i) = std::min(std::max(_diag_lambda(i), _lambda_min), _lambda_max);
         }
+    }
+
+    double Problem::calculate_hessian_norm_square(const graph_optimization::VecX &x) {
+#ifdef HESSIAN_NORM_SQUARE_USING_GRAPH
+        double norm2 = 0.;
+
+        // TODO:: accelate, accelate, accelate
+//#ifdef USE_OPENMP
+//#pragma omp parallel for
+//#endif
+
+        for (auto &edge: _edges) {
+            auto &&jacobians = edge.second->jacobians();
+            auto &&verticies = edge.second->vertices();
+            assert(jacobians.size() == verticies.size());
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                double drho;
+                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
+                edge.second->robust_information(drho, robust_information);
+
+                VecX Jx = jacobian_i * x.segment(index_i, dim_i);
+                norm2 += Jx.transpose() * robust_information * Jx;
+            }
+        }
+
+        return norm2;
+#else
+        return x.dot(multiply_hessian(x));
+#endif
+    }
+
+    VecX Problem::multiply_hessian(const VecX &x) {
+#ifdef MULTIPLY_HESSIAN_USING_SELF_ADJOINT
+        auto &&hessian = _hessian.selfadjointView<Eigen::Upper>();
+        return hessian * x;
+#else
+        return _hessian * x;
+#endif
     }
 
     /*

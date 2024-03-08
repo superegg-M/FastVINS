@@ -31,6 +31,7 @@ namespace graph_optimization {
             void initialize_ordering() override;
             bool check_ordering() override;
             void add_prior_to_hessian() override;
+            VecX multiply_hessian(const VecX &x) override;
             bool solve_linear_system(VecX &delta_x) override;
             void update_prior(const VecX &delta_x) override;
             void resize_pose_hessian_when_adding_pose(const std::shared_ptr<Vertex>& v);    ///< 在新增顶点后，需要调整几个hessian的大小

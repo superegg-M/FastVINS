@@ -68,6 +68,8 @@ namespace graph_optimization {
         void update_hessian();    ///< 计算H, b, J, f;    运行顺序必须遵循: update_jacobian -> update_hessian
         virtual void add_prior_to_hessian();    ///< H = H + H_prior;   在make_hessian()时会运行
         void initialize_lambda();   ///< 计算λ;   运行顺序必须遵循: update_hessian -> initialize_lambda
+        virtual VecX multiply_hessian(const VecX &x); ///< 计算: Hx
+        virtual double calculate_hessian_norm_square(const VecX &x);    ///< 计算: x'Hx
         virtual bool solve_linear_system(VecX &delta_x);    ///< 解: (H+λ)Δx = b
         bool one_step_steepest_descent(VecX &delta_x);  ///< 计算: h_sd = alpha*g
         bool one_step_gauss_newton(VecX &delta_x);  ///< 计算: h_gn = (H+λ)/g;   运行顺序必须遵循: update_hessian -> one_step_gauss_newton

@@ -193,6 +193,21 @@ namespace graph_optimization {
             return true;
         }
 
+        VecX ProblemSLAM::multiply_hessian(const VecX &x) {
+            VecX v(VecX::Zero(x.rows(), x.cols()));
+            for (unsigned long i = 0; i < _ordering_poses; i++) {
+                v(i) += _hessian(i, i) * x(i);  // 计算对角线部分
+                for (unsigned long j = i + 1; j < _ordering_generic; j++) { // 计算非对角线部分
+                    v(i) += _hessian(i, j) * x(j);  // 上三角部分
+                    v(j) += _hessian(i, j) * x(i);  // 下三角部分
+                }
+            }
+            for (unsigned long i = _ordering_poses; i < _ordering_generic; ++i) {
+                v(i) += _hessian(i, i) * x(i);
+            }
+            return v;
+        }
+
         bool ProblemSLAM::solve_linear_system(graph_optimization::VecX &delta_x) {
             if (delta_x.rows() != (_ordering_poses + _ordering_landmarks)) {
                 delta_x.resize(_ordering_poses + _ordering_landmarks, 1);
@@ -306,10 +321,10 @@ namespace graph_optimization {
             }
 
             // 分配landmark的维度
-            _ordering_landmarks = _ordering_poses;
+            _ordering_landmarks = 0;
             for (auto &vertex: _vertices) {
                 if (is_landmark_vertex(vertex.second)) {
-                    vertex.second->set_ordering_id(_ordering_landmarks);
+                    vertex.second->set_ordering_id(_ordering_landmarks + _ordering_poses);
                     _idx_landmark_vertices.insert(pair<ulong, std::shared_ptr<Vertex>>(vertex.second->id(), vertex.second));
                     _ordering_landmarks += vertex.second->local_dimension();
                 }
