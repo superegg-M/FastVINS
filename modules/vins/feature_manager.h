@@ -22,6 +22,9 @@ using namespace Eigen;
 #include "parameters.h"
 
 namespace vins {
+    /*！
+     * 特征点在每个frame中的信息
+     */
     class FeatureLocalInfo {
     public:
         struct State {
@@ -51,6 +54,9 @@ namespace vins {
         bool is_used{false};
     };
 
+    /*!
+     * 特征点的全局信息
+     */
     class FeatureGlobalInfo {
     public:
         enum class Flag : unsigned char {
@@ -64,14 +70,24 @@ namespace vins {
         : feature_id(feature_index), start_frame_id(start_frame_index) {
         }
 
+        /*!
+         * 判断该特征点是否能够用于计算重投影误差
+         * 由于WINDOW的最后一帧(WINDOW_SIZE - 1)不一定是key_frame,
+         * 所以最后一帧的key_frame为WINDOW中的倒数第二帧(WINDOW_SIZE - 2).
+         * 而要用与计算重投影误差至少需要被2个key_frame观测到,
+         * 所以start_frame < WINDOW_SIZE - 2
+         * @return
+         */
+        bool is_suitable_to_reprojection() const { return get_used_num() >= 2 && start_frame_id + 2 < WINDOW_SIZE; }
+        unsigned long get_used_num() const { return feature_local_infos.size(); }
         unsigned long get_end_frame_id() const { return start_frame_id + feature_local_infos.size() - 1; }
 
     public:
-        const unsigned long feature_id;
-        unsigned long start_frame_id;
-        unsigned long used_num{0};
+        const unsigned long feature_id; // 每个feature对应一个独一无二的id
+        unsigned long start_frame_id;   // start_frame_id ∈ [0, WINDOW_SIZE)
+//        unsigned long used_num {0};   // 通过feature_local_infos.size()获取
 
-        double estimated_depth{-1.};
+        double estimated_depth {-1.};
         Vector3d gt_p;
 
         vector<FeatureLocalInfo> feature_local_infos;   // TODO: 换成map
@@ -116,10 +132,11 @@ namespace vins {
         void remove_back();
 
         /// @brief 在滑窗中移除倒数第二新的帧
-        void remove_front(unsigned long frame_id);
+        void remove_front(unsigned long frame_count);
         void remove_failures();
 //        list<FeatureGlobalInfo> features;
         unordered_map<unsigned long, FeatureGlobalInfo> features_map;
+        vector<unsigned long> feature_id_erase;
         unsigned long last_track_num;
 
     private:

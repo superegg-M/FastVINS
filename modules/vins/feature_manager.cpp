@@ -5,10 +5,11 @@
 #include "feature_manager.h"
 
 namespace vins {
-    FeatureManager::FeatureManager(Matrix3d *r_wi) : _r_wi(r_wi) {
+    FeatureManager::FeatureManager(Matrix3d *r_wi) : _r_wi(r_wi), feature_id_erase(NUM_OF_F) {
         for (auto & r : _r_ic) {
             r.setIdentity();
         }
+        feature_id_erase.clear();
     }
 
     void FeatureManager::set_ric(Matrix3d *r_ic) {
@@ -19,45 +20,51 @@ namespace vins {
 
     void FeatureManager::clear_feature() {
         features_map.clear();
+        feature_id_erase.clear();
     }
 
     unsigned int FeatureManager::get_feature_count() {
         unsigned int cnt = 0;
         for (auto &feature : features_map) {
-            feature.second.used_num = feature.second.feature_local_infos.size();
-            if (feature.second.used_num >= 2 && feature.second.start_frame_id + 2 < WINDOW_SIZE) {
+            if (feature.second.is_suitable_to_reprojection()) {
                 ++cnt;
             }
         }
         return cnt;
     }
 
-    bool FeatureManager::add_feature_check_parallax(unsigned long frame_id,
+    bool FeatureManager::add_feature_check_parallax(unsigned long frame_count,
                                                     const map<unsigned long, vector<pair<unsigned long, FeatureLocalInfo::State>>> &image,
                                                     double td) {
         double parallax_sum = 0;
         int parallax_num = 0;
         last_track_num = 0;
+        // 遍历image中的每个feature
         for (auto &feature_global_info : image) {   // pair<unsigned long, vector<pair<unsigned long, FeatureLocalInfo::State>>>
             FeatureLocalInfo feature_local_info_start_frame(feature_global_info.second[0].second, td);  // 左目
-
             unsigned long feature_id = feature_global_info.first;
-            if (features_map.find(feature_id) == features_map.end()) {  // 新的feature
-                features_map.emplace(pair<unsigned long, FeatureGlobalInfo>(feature_id, FeatureGlobalInfo(feature_id, frame_id)));
-                features_map[feature_id].feature_local_infos.push_back(feature_local_info_start_frame);
-            } else {    // 已存在的feature
-                features_map[feature_id].feature_local_infos.push_back(feature_local_info_start_frame);
+            auto feature_it = features_map.find(feature_id);
+            /*
+             * 1. 如果该feature是新的feature, 则把feature加入到feature_map中
+             * 2. 如果是已经出现过的feature, 则说明该特征点已经在被跟踪着
+             * */
+            if (feature_it == features_map.end()) {
+                features_map.emplace(pair<unsigned long, FeatureGlobalInfo>(feature_id, FeatureGlobalInfo(feature_id, frame_count)));
+                feature_it = features_map.find(feature_id);
+            } else {
                 ++last_track_num;
             }
+            feature_it->second.feature_local_infos.emplace_back(feature_local_info_start_frame);    // 把frame加入到feature中
         }
 
-        if (frame_id < 2 || last_track_num < 20) {  // 头两帧 or 该帧的所有特征点被追踪的次数小于20次
+        // 只有1帧, 或者该image中只有20个特征点处于被追踪的状态, 则认为该image所产生的视差很大
+        if (frame_count < 2 || last_track_num < 20) {
             return true;
         }
 
         for (auto &features : features_map) {
-            if (features.second.start_frame_id + 2 <= frame_id && features.second.get_end_frame_id() + 1 >= frame_id) {
-                parallax_sum += compensated_parallax2(features.second, frame_id);
+            if (features.second.start_frame_id + 2 <= frame_count && features.second.get_end_frame_id() + 1 >= frame_count) {
+                parallax_sum += compensated_parallax2(features.second, frame_count);
                 ++parallax_num;
             }
         }
@@ -90,36 +97,35 @@ namespace vins {
     void FeatureManager::set_depth(const VectorXd &x) {
         unsigned long feature_index = 0;
         for (auto &feature : features_map) {
-            feature.second.used_num = feature.second.feature_local_infos.size();
-            if (!(feature.second.used_num >= 2 && feature.second.start_frame_id + 2 < WINDOW_SIZE)) {
-                continue;
-            }
-
-            feature.second.estimated_depth = 1. / x[feature_index++];
-            if (feature.second.estimated_depth < 0) {
-                feature.second.solve_flag = FeatureGlobalInfo::Flag::failure;
-            } else {
-                feature.second.solve_flag = FeatureGlobalInfo::Flag::success;
+            if (feature.second.is_suitable_to_reprojection()) {
+                feature.second.estimated_depth = 1. / x[feature_index++];
+                if (feature.second.estimated_depth < 0) {
+                    feature.second.solve_flag = FeatureGlobalInfo::Flag::failure;
+                } else {
+                    feature.second.solve_flag = FeatureGlobalInfo::Flag::success;
+                }
             }
         }
     }
 
     void FeatureManager::remove_failures() {
-        for (auto it = features_map.begin(); it != features_map.end(); ++it) {
-            if (it->second.solve_flag == FeatureGlobalInfo::Flag::failure) {
-                features_map.erase(it);
+        feature_id_erase.clear();
+        for (auto &it : features_map) {
+            if (it.second.solve_flag == FeatureGlobalInfo::Flag::failure) {
+                feature_id_erase.emplace_back(it.first);
             }
+        }
+        for (auto &id : feature_id_erase) {
+            features_map.erase(id);
         }
     }
 
     void FeatureManager::clear_depth(const VectorXd &x) {
         unsigned long feature_index = 0;
         for (auto &feature : features_map) {
-            feature.second.used_num = feature.second.feature_local_infos.size();
-            if (!(feature.second.used_num >= 2 && feature.second.start_frame_id + 2 < WINDOW_SIZE)) {
-                continue;
+            if (feature.second.is_suitable_to_reprojection()) {
+                feature.second.estimated_depth = 1. / x[feature_index++];
             }
-            feature.second.estimated_depth = 1. / x[feature_index++];
         }
     }
 
@@ -127,67 +133,61 @@ namespace vins {
         VectorXd dep_vec(get_feature_count());
         unsigned long feature_index = 0;
         for (auto &feature : features_map) {
-            feature.second.used_num = feature.second.feature_local_infos.size();
-            if (!(feature.second.used_num >= 2 && feature.second.start_frame_id + 2 < WINDOW_SIZE)) {
-                continue;
+            if (feature.second.is_suitable_to_reprojection()) {
+                dep_vec[feature_index++] = 1. / feature.second.estimated_depth;
             }
-            dep_vec[feature_index++] = 1. / feature.second.estimated_depth;
         }
         return dep_vec;
     }
 
     void FeatureManager::triangulate(Vector3d p_imu[], Vector3d t_ic[], Matrix3d r_ic[]) {
         for (auto &feature : features_map) {
-            feature.second.used_num = feature.second.feature_local_infos.size();
-            if (!(feature.second.used_num >= 2 && feature.second.start_frame_id + 2 < WINDOW_SIZE)) {
-                continue;
-            }
+            if (feature.second.is_suitable_to_reprojection()) {
+                if (feature.second.estimated_depth > 0.) {  // 该特征点已经进行过三角化
+                    continue;
+                }
+                unsigned long frame_i = feature.second.start_frame_id;
+                unsigned long frame_j;
 
-            // 已经进行过三角化
-            if (feature.second.estimated_depth > 0) {
-                continue;
-            }
-            unsigned long frame_i = feature.second.start_frame_id;
-            unsigned long frame_j;
+                assert(NUM_OF_CAM == 1);
 
-            assert(NUM_OF_CAM == 1);
+                Eigen::MatrixXd svd_A(2 * feature.second.feature_local_infos.size(), 4);
+                Eigen::Matrix<double, 3, 4> P;
+                Eigen::Vector3d f;
 
-            Eigen::MatrixXd svd_A(2 * feature.second.feature_local_infos.size(), 4);
-            Eigen::Matrix<double, 3, 4> P;
-            Eigen::Vector3d f;
+                Eigen::Vector3d t_wci_w = p_imu[frame_i] + _r_wi[frame_i] * t_ic[0];
+                Eigen::Matrix3d r_wci = _r_wi[frame_i] * r_ic[0];
 
-            Eigen::Vector3d t_wci_w = p_imu[frame_i] + _r_wi[frame_i] * t_ic[0];
-            Eigen::Matrix3d r_wci = _r_wi[frame_i] * r_ic[0];
+                P.leftCols<3>() = Eigen::Matrix3d::Identity();
+                P.rightCols<1>() = Eigen::Vector3d::Zero();
 
-            P.leftCols<3>() = Eigen::Matrix3d::Identity();
-            P.rightCols<1>() = Eigen::Vector3d::Zero();
+                f = feature.second.feature_local_infos[0].point.normalized();
+                svd_A.row(0) = f[0] * P.row(2) - f[2] * P.row(0);
+                svd_A.row(1) = f[1] * P.row(2) - f[2] * P.row(1);
 
-            f = feature.second.feature_local_infos[0].point.normalized();
-            svd_A.row(0) = f[0] * P.row(2) - f[2] * P.row(0);
-            svd_A.row(1) = f[1] * P.row(2) - f[2] * P.row(1);
+                for (unsigned long j = 1; j < feature.second.feature_local_infos.size(); ++j) {
+                    frame_j = frame_i + j;
 
-            for (unsigned long j = 1; j < feature.second.feature_local_infos.size(); ++j) {
-                frame_j = frame_i + j;
+                    Eigen::Vector3d t_wcj_w = p_imu[frame_j] + _r_wi[frame_j] * t_ic[0];
+                    Eigen::Matrix3d r_wcj = _r_wi[frame_j] * r_ic[0];
+                    Eigen::Vector3d t_cicj_ci = r_wci.transpose() * (t_wcj_w - t_wci_w);
+                    Eigen::Matrix3d r_cicj = r_wci.transpose() * r_wcj;
 
-                Eigen::Vector3d t_wcj_w = p_imu[frame_j] + _r_wi[frame_j] * t_ic[0];
-                Eigen::Matrix3d r_wcj = _r_wi[frame_j] * r_ic[0];
-                Eigen::Vector3d t_cicj_ci = r_wci.transpose() * (t_wcj_w - t_wci_w);
-                Eigen::Matrix3d r_cicj = r_wci.transpose() * r_wcj;
+                    P.leftCols<3>() = r_cicj.transpose();
+                    P.rightCols<1>() = -r_cicj.transpose() * t_cicj_ci;
 
-                P.leftCols<3>() = r_cicj.transpose();
-                P.rightCols<1>() = -r_cicj.transpose() * t_cicj_ci;
+                    f = feature.second.feature_local_infos[j].point.normalized();
+                    svd_A.row(2 * j) = f[0] * P.row(2) - f[2] * P.row(0);
+                    svd_A.row(2 * j + 1) = f[1] * P.row(2) - f[2] * P.row(1);
+                }
 
-                f = feature.second.feature_local_infos[j].point.normalized();
-                svd_A.row(2 * j) = f[0] * P.row(2) - f[2] * P.row(0);
-                svd_A.row(2 * j + 1) = f[1] * P.row(2) - f[2] * P.row(1);
-            }
+                Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+                double depth = svd_V[2] / svd_V[3];
+                feature.second.estimated_depth = depth;
 
-            Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
-            double depth = svd_V[2] / svd_V[3];
-            feature.second.estimated_depth = depth;
-
-            if (feature.second.estimated_depth < 0.1) {
-                feature.second.estimated_depth = INIT_DEPTH;
+                if (feature.second.estimated_depth < 0.1) {
+                    feature.second.estimated_depth = INIT_DEPTH;
+                }
             }
         }
     }
@@ -206,27 +206,36 @@ namespace vins {
 //        }
     }
 
+    /*!
+     * 删除WINDOW中的oldest帧, 并重新计算featre的深度
+     *
+     * @param marg_R
+     * @param marg_P
+     * @param new_R
+     * @param new_P
+     */
     void FeatureManager::remove_back_shift_depth(const Eigen::Matrix3d& marg_R, const Eigen::Vector3d& marg_P,
                                                  Eigen::Matrix3d new_R, const Eigen::Vector3d& new_P) {
+        feature_id_erase.clear();
         for (auto &feature : features_map) {
-            if (feature.second.start_frame_id != 0) {
+            if (feature.second.start_frame_id != 0) {   // 由于所有帧都左移1个frame, 所以feature中的start_frame_id需要减1
                 --feature.second.start_frame_id;
-            } else {
+            } else {    // 对于start_frame_id=0的feature, 则需要把frame从feature中删除并且重新以新的start_frame计算深度
                 Eigen::Vector3d uv_i = feature.second.feature_local_infos[0].point;
-                feature.second.feature_local_infos.erase(feature.second.feature_local_infos.begin());
-                if (feature.second.feature_local_infos.size() < 2) {
-                    features_map.erase(feature.first);
+                feature.second.feature_local_infos.erase(feature.second.feature_local_infos.begin());   // 把frame从feature中删除
+                if (feature.second.feature_local_infos.size() < 2) {    // 如果删除frame后, frame数小于2, 则该feature已无法计算重投影误差, 所以直接删除
+                    feature_id_erase.emplace_back(feature.first);
                     continue;
+                }
+                // 以新的start_frame计算feature的深度
+                Eigen::Vector3d p_feature_c = uv_i * feature.second.estimated_depth;
+                Eigen::Vector3d p_feature_w = marg_R * p_feature_c + marg_P;
+                Eigen::Vector3d p_feature_c_new = new_R.transpose() * (p_feature_w - new_P);
+                double depth_new = p_feature_c_new[2];
+                if (depth_new > 0) {
+                    feature.second.estimated_depth = depth_new;
                 } else {
-                    Eigen::Vector3d p_feature_c = uv_i * feature.second.estimated_depth;
-                    Eigen::Vector3d p_feature_w = marg_R * p_feature_c + marg_P;
-                    Eigen::Vector3d p_feature_c_new = new_R.transpose() * (p_feature_w - new_P);
-                    double depth_new = p_feature_c_new[2];
-                    if (depth_new > 0) {
-                        feature.second.estimated_depth = depth_new;
-                    } else {
-                        feature.second.estimated_depth = INIT_DEPTH;
-                    }
+                    feature.second.estimated_depth = INIT_DEPTH;
                 }
             }
             // remove tracking-lost feature after marginalize
@@ -237,9 +246,18 @@ namespace vins {
             }
             */
         }
+
+        // 删除frame小于2的feature
+        for (auto &id : feature_id_erase) {
+            features_map.erase(id);
+        }
     }
 
+    /*!
+     * 删除WINDOW中的oldest帧
+     */
     void FeatureManager::remove_back() {
+        feature_id_erase.clear();
         for (auto &feature : features_map) {
             if (feature.second.start_frame_id != 0) {
                 --feature.second.start_frame_id;
@@ -247,24 +265,49 @@ namespace vins {
             else {
                 feature.second.feature_local_infos.erase(feature.second.feature_local_infos.begin());
                 if (feature.second.feature_local_infos.empty()) {
-                    features_map.erase(feature.first);
+                    feature_id_erase.emplace_back(feature.first);
                 }
             }
         }
+
+        // 删除frame小于2的feature
+        for (auto &id : feature_id_erase) {
+            features_map.erase(id);
+        }
     }
 
-    void FeatureManager::remove_front(unsigned long frame_id) {
+    /*!
+     * 删除WINDOW中的newest帧
+     * @param frame_count frame的总个数
+     */
+    void FeatureManager::remove_front(unsigned long frame_count) {
+        feature_id_erase.clear();
+        /*
+         * WINDOW的大小为frame_count
+         * Camera最新观测到的camera_frame的id为frame_count
+         * */
         for (auto &feature : features_map) {
-            if (feature.second.start_frame_id == frame_id) {
+            /*
+             * 1. 若start_frame为camera_frame, 则start_frame需要减1, 因为WINDOW中的newest_frame会被删除, 其id为frame_count - 1,
+             *    而frame_camera则会移东到WINDOW中的newest_frame中。
+             *
+             * 2. 若end_frame为newest_frame(id为frame_count-1), 则需要把该end_frame从feature中删除, 因为newest_frame会被删除
+             * */
+            if (feature.second.start_frame_id == frame_count) {
                 --feature.second.start_frame_id;
-            } else if (feature.second.get_end_frame_id() + 1 >= frame_id) {
-                // feature.second.feature_local_infos.begin() + j 对应倒数第二帧
-                unsigned long j = WINDOW_SIZE - 1 - feature.second.start_frame_id;
+            } else if (feature.second.get_end_frame_id() + 1 >= frame_count) {
+                // feature.second.feature_local_infos.begin() + j 对应newest_frame
+                unsigned long j = frame_count - 1 - feature.second.start_frame_id;
                 feature.second.feature_local_infos.erase(feature.second.feature_local_infos.begin() + j);
                 if (feature.second.feature_local_infos.empty()) {
-                    features_map.erase(feature.first);
+                    feature_id_erase.emplace_back(feature.first);
                 }
             }
+        }
+
+        // 删除frame数为0的feature
+        for (auto &id : feature_id_erase) {
+            features_map.erase(id);
         }
     }
 
