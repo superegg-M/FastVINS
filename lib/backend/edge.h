@@ -27,7 +27,7 @@ namespace graph_optimization {
                       const std::vector<std::string> &vertices_types = std::vector<std::string>(),
                       unsigned loss_function_type=0);
 
-        virtual ~Edge() = default;
+        virtual ~Edge();
 
         /// 返回id
         unsigned long id() const { return _id; }
@@ -57,6 +57,13 @@ namespace graph_optimization {
                 return true;
             }
             return false;
+        }
+
+        bool set_loss_function(LossFunction *loss_function) {
+            if (loss_function) {
+                delete _loss_function;
+                _loss_function = loss_function;
+            }
         }
 
         /// 返回第i个顶点

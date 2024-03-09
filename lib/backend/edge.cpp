@@ -39,6 +39,10 @@ namespace graph_optimization {
         }
     }
 
+    Edge::~Edge() {
+        delete _loss_function;
+    }
+
     void Edge::compute_chi2() {
         _chi2 = _residual.transpose() * _information * _residual;
         _rho = _loss_function->compute(_chi2);

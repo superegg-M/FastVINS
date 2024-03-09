@@ -19,6 +19,14 @@ namespace graph_optimization {
      */
     class LossFunction {
     public:
+        enum class LossFunctionType {
+            TRIVIAL,
+            HUBER,
+            CAUCHY,
+            TUKEY
+        };
+
+    public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
         virtual ~LossFunction() = default;

@@ -5,12 +5,12 @@
 #ifndef GRAPH_OPTIMIZATION_PROBLEM_SLAM_H
 #define GRAPH_OPTIMIZATION_PROBLEM_SLAM_H
 
-#include <iostream>
-#include <fstream>
-
-//#include <glog/logging.h>
-#include <Eigen/Dense>
-#include <lib/tic_toc/tic_toc.h>
+//#include <iostream>
+//#include <fstream>
+//
+////#include <glog/logging.h>
+//#include <Eigen/Dense>
+//#include <lib/tic_toc/tic_toc.h>
 #include "problem.h"
 
 namespace graph_optimization {
