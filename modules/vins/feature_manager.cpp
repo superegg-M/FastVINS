@@ -33,9 +33,9 @@ namespace vins {
         return cnt;
     }
 
-    bool FeatureManager::add_feature_check_parallax(unsigned long frame_count,
-                                                    const map<unsigned long, vector<pair<unsigned long, FeatureLocalInfo::State>>> &image,
-                                                    double td) {
+    bool FeatureManager::add_feature_and_check_latest_frame_parallax(unsigned long frame_count,
+                                                                     const map<unsigned long, vector<pair<unsigned long, FeatureLocalInfo::State>>> &image,
+                                                                     double td) {
         double parallax_sum = 0;
         int parallax_num = 0;
         last_track_num = 0;
@@ -46,7 +46,7 @@ namespace vins {
             auto feature_it = features_map.find(feature_id);
             /*
              * 1. 如果该feature是新的feature, 则把feature加入到feature_map中
-             * 2. 如果是已经出现过的feature, 则说明该特征点已经在被跟踪着
+             * 2. 如果是已经出现过的feature, 则说明该特征点已经在被跟踪着, 同时该特征点一定在newest frame被观测到
              * */
             if (feature_it == features_map.end()) {
                 features_map.emplace(pair<unsigned long, FeatureGlobalInfo>(feature_id, FeatureGlobalInfo(feature_id, frame_count)));
@@ -57,18 +57,33 @@ namespace vins {
             feature_it->second.feature_local_infos.emplace_back(feature_local_info_start_frame);    // 把frame加入到feature中
         }
 
-        // 只有1帧, 或者该image中只有20个特征点处于被追踪的状态, 则认为该image所产生的视差很大
+        /*
+         * 1. 只有1帧, 说明WINDOW中目前并没有任何frame, 所以此时需要无条件把该frame加入到WINDOW中
+         * 2. image中只有20个特征点处于被追踪的状态, 则说明camera frame已经与WINDOW中的frame差异很大, 所以要去掉WINDOW中的old frame
+         * */
         if (frame_count < 2 || last_track_num < 20) {
             return true;
         }
 
+        /*
+         * 如果一个特征start_frame_id <= newest_frame_id - 1 && end_frame_id >= newest_frame_id
+         * 则该特征一定在newest_frame中被观测到且处于被追踪的状态
+         * */
         for (auto &features : features_map) {
             if (features.second.start_frame_id + 2 <= frame_count && features.second.get_end_frame_id() + 1 >= frame_count) {
+                // 计算newest和newest - 1的视差
                 parallax_sum += compensated_parallax2(features.second, frame_count);
                 ++parallax_num;
             }
         }
 
+        /*
+         * 如果parallax_num == 0, 则说明对于所有feature, 都不满足start_frame_id <= newest_frame_id - 1 && end_frame_id >= newest_frame_id
+         * 但是对于条件 end_frame_id >= newest_frame_id 必定有feature满足, 比如说当前image中所观测到的feature
+         * 所以说明对于所有feature均不满足的条件为start_frame_id <= newest_frame_id - 1,
+         * 即: start_frame_id > newest_frame_id - 1 <=> start_frame_id >= newest_frame_id
+         * 则说明WINDOW中比newest_frame旧的frame, 都已经没有任何feature与之相连, 所以要去掉WINDOW中的old frame
+         * */
         if (parallax_num == 0) {
             return true;
         }

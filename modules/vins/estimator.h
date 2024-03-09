@@ -17,7 +17,7 @@
 //#include "factor/integration_base.h"
 
 //#include "backend/problem.h"
-#include <lib/backend/problem.h>
+#include <lib/backend/problem_slam.h>
 #include <lib/backend/eigen_types.h>
 
 #include <unordered_map>
@@ -72,6 +72,8 @@ namespace vins {
             MARGIN_SECOND_NEW = 1
         };
 //////////////// OUR SOLVER ///////////////////
+
+        graph_optimization::ProblemSLAM _problem;
         MatXX Hprior_;
         VecX bprior_;
         VecX errprior_;

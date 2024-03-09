@@ -79,6 +79,9 @@ namespace vins {
          * @return
          */
         bool is_suitable_to_reprojection() const { return get_used_num() >= 2 && start_frame_id + 2 < WINDOW_SIZE; }
+        bool is_start_in_key_frame() const { return start_frame_id + 2 <= WINDOW_SIZE; }
+        bool is_end_in_camera_frame() const { return get_end_frame_id() == WINDOW_SIZE; }
+        bool is_end_in_newest_frame() const { return get_end_frame_id() == WINDOW_SIZE - 1; }
         unsigned long get_used_num() const { return feature_local_infos.size(); }
         unsigned long get_end_frame_id() const { return start_frame_id + feature_local_infos.size() - 1; }
 
@@ -109,12 +112,12 @@ namespace vins {
 
         /*!
          *
-         * @param frame_id
+         * @param frame_count
          * @param image {feature_id, {{camera_id, local_feature_state}, {camera_id, local_feature_state}, ...}}
          * @param td
          * @return
          */
-        bool add_feature_check_parallax(unsigned long frame_id, const map<unsigned long, vector<pair<unsigned long, FeatureLocalInfo::State>>> &image, double td);
+        bool add_feature_and_check_latest_frame_parallax(unsigned long frame_count, const map<unsigned long, vector<pair<unsigned long, FeatureLocalInfo::State>>> &image, double td);
         void debug_show();
         vector<pair<Vector3d, Vector3d>> get_corresponding(unsigned long frame_count_l, unsigned long frame_count_r);
 
