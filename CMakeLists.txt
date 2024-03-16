@@ -14,4 +14,4 @@ add_subdirectory(lib)
 add_subdirectory(modules)
 
 add_executable(GraphOptimization main.cpp)
-target_link_libraries(GraphOptimization PUBLIC backend fdsi test_ba)
+target_link_libraries(GraphOptimization PUBLIC backend fdsi test_ba vins)
