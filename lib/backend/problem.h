@@ -50,6 +50,8 @@ namespace graph_optimization {
 
     public:
         void set_solver_type(SolverType type) { _solver_type = type; }
+        void set_h_prior(const MatXX &h_prior) { _h_prior = h_prior; }
+        void set_b_prior(const VecX &b_prior) { _b_prior = b_prior; }
 
         //test compute prior
         void test_compute_prior();

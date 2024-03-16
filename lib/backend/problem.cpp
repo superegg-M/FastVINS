@@ -164,7 +164,6 @@ namespace graph_optimization {
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < verticies.size(); ++j) {
                     auto &&v_j = verticies[j];
-
                     if (v_j->is_fixed()) continue;
 
                     auto &&jacobian_j = jacobians[j];
@@ -180,7 +179,7 @@ namespace graph_optimization {
                         H.block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                b.segment(index_i, dim_i).noalias() -= drho * JtW * edge.second->residual();
+                b.segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
             }
 
         }
@@ -234,7 +233,7 @@ namespace graph_optimization {
         }
     }
 
-    double Problem::calculate_hessian_norm_square(const graph_optimization::VecX &x) {
+    double Problem::calculate_hessian_norm_square(const VecX &x) {
 #ifdef HESSIAN_NORM_SQUARE_USING_GRAPH
         double norm2 = 0.;
 
