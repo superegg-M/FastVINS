@@ -7,7 +7,7 @@
 #include "vertex_pose.h"
 #include "vertex_motion.h"
 #include "edge_reprojection.h"
-//#include "edge_imu.h"
+#include "edge_imu.h"
 
 #include <lib/tic_toc/tic_toc.h>
 
@@ -890,7 +890,7 @@ namespace vins {
         //    lossfunction = new backend::TukeyLoss(1.0);
 
         // step1. 构建 problem
-        _problem = ProblemSLAM();
+        _problem = slam::ProblemSLAM();
         vector<shared_ptr<VertexPose>> vertex_pose_buff;
         vector<shared_ptr<VertexMotion>> vertex_motion_buff;
         unsigned long pose_dim = 0;
@@ -937,7 +937,7 @@ namespace vins {
         vector<shared_ptr<Vertex>> vertices_of_imu(4);
         for (unsigned long i = 0; i < WINDOW_SIZE; ++i) {
             unsigned long j = i + 1;
-            if (pre_integrations[j]->sum_dt > 10.0) {
+            if (pre_integrations[j]->get_sum_dt() > 10.0) {
                 continue;
             }
 
@@ -946,7 +946,7 @@ namespace vins {
             vertices_of_imu.emplace_back(vertex_pose_buff[j]);
             vertices_of_imu.emplace_back(vertex_motion_buff[j]);
 
-            std::shared_ptr<backend::EdgeImu> edge_imu(new backend::EdgeImu(pre_integrations[j]));
+            std::shared_ptr<graph_optimization::EdgeImu> edge_imu(new graph_optimization::EdgeImu(pre_integrations[j]));
             edge_imu->set_vertices(vertices_of_imu);
             _problem.add_edge(edge_imu);
         }
@@ -1013,23 +1013,20 @@ namespace vins {
         // update parameter
         for (int i = 0; i < WINDOW_SIZE + 1; i++)
         {
-            VecX p = vertexCams_vec[i]->Parameters();
-            for (int j = 0; j < 7; ++j)
-            {
+            auto &&p = vertex_pose_buff[i]->get_parameters();
+            for (int j = 0; j < 7; ++j){
                 para_Pose[i][j] = p[j];
             }
 
-            VecX vb = vertexVB_vec[i]->Parameters();
-            for (int j = 0; j < 9; ++j)
-            {
+            auto &&vb = vertex_motion_buff[i]->get_parameters();
+            for (int j = 0; j < 9; ++j) {
                 para_SpeedBias[i][j] = vb[j];
             }
         }
 
         // 遍历每一个特征
-        for (int i = 0; i < vertexPt_vec.size(); ++i)
-        {
-            VecX f = vertexPt_vec[i]->Parameters();
+        for (int i = 0; i < vertex_feature_buff.size(); ++i) {
+            auto &&f = vertex_feature_buff[i]->get_parameters();
             para_Feature[i][0] = f[0];
         }
     }

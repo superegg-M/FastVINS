@@ -72,8 +72,7 @@ namespace vins {
             MARGIN_SECOND_NEW = 1
         };
 //////////////// OUR SOLVER ///////////////////
-
-        graph_optimization::ProblemSLAM _problem;
+        slam::ProblemSLAM _problem;
         MatXX Hprior_;
         VecX bprior_;
         VecX errprior_;
