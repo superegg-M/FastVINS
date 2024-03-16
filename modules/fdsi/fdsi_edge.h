@@ -19,7 +19,7 @@ namespace system_identification {
         public:
             EIGEN_MAKE_ALIGNED_OPERATOR_NEW
             FDSIEdge(double w, double re, double im)
-                    : Edge(2, 1, std::vector<std::string>{"FDSI"}), _w(w), _re(re), _im(im) {}
+                    : Edge(2, 1, std::vector<std::string>{"FDSI"}, 2), _w(w), _re(re), _im(im) {}
 
             // 计算曲线模型误差
             void compute_residual() override;
