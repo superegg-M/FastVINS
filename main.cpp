@@ -6,6 +6,7 @@
 #include "modules/test_ba/vertex_pose.h"
 #include "modules/test_ba/vertex_inverse_depth.h"
 #include "modules/test_ba/edge_reprojection.h"
+#include "modules/vins/imu_integration.h"
 
 using namespace graph_optimization;
 using namespace std;
@@ -45,6 +46,35 @@ int main() {
 
     return 0;
 }
+
+///*
+// * 预积分
+// * */
+//int main() {
+//    vins::IMUIntegration imu_integration(Vec3::Zero(), Vec3::Zero());
+//    double dt = 0.005;
+//    Vec3 a {0.1, 0.2, 0.3};
+//    Vec3 w {-0.1, -0.2, -0.3};
+//
+//    imu_integration.propagate(dt, a, w);
+//    imu_integration.propagate(dt, a, w);
+//    imu_integration.propagate(dt, a, w);
+//    imu_integration.propagate(dt, a, w);
+//    imu_integration.propagate(dt, a, w);
+//
+//    cout << imu_integration.get_delta_r().matrix() << endl;
+//    cout << imu_integration.get_delta_p() << endl;
+//    cout << imu_integration.get_delta_v() << endl;
+//
+//    Vec3 ba {0.01, 0.02, 0.03};
+//    Vec3 bg {-0.01, -0.02, -0.03};
+//    imu_integration.correct(ba, bg);
+//    cout << imu_integration.get_delta_r().matrix() << endl;
+//    cout << imu_integration.get_delta_p() << endl;
+//    cout << imu_integration.get_delta_v() << endl;
+//
+//    return 0;
+//}
 
 ///*
 // * SLAM
