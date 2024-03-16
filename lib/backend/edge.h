@@ -25,7 +25,7 @@ namespace graph_optimization {
          */
         explicit Edge(unsigned long residual_dimension, unsigned long num_vertices,
                       const std::vector<std::string> &vertices_types = std::vector<std::string>(),
-                      unsigned loss_function_type=0);
+                      unsigned loss_function_type=3);
 
         virtual ~Edge();
 
@@ -63,7 +63,9 @@ namespace graph_optimization {
             if (loss_function) {
                 delete _loss_function;
                 _loss_function = loss_function;
+                return true;
             }
+            return false;
         }
 
         /// 返回第i个顶点
@@ -128,7 +130,6 @@ namespace graph_optimization {
         double _chi2 {0};               ///< e^2
         Vec3 _rho;                      ///< rho(e^2), rho'(e^2), rho''(e^2)
         MatXX _information;             ///< 信息矩阵
-        MatXX _sqrt_information;        ///< 信息矩阵开方
         VecX _observation;              ///< 观测信息
         LossFunction *_loss_function;
 
