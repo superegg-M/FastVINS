@@ -21,6 +21,8 @@ namespace graph_optimization {
 
     protected:
         vins::IMUIntegration _imu_integration;
+        static Eigen::Matrix<double, 4, 4> get_quat_left(const Qd &q);
+        static Eigen::Matrix<double, 4, 4> get_quat_right(const Qd &q);
     };
 }
 
