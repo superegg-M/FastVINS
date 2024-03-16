@@ -7,5 +7,5 @@ add_library(vins
         edge_reprojection.cpp
         imu_integration.cpp
         feature_manager.cpp
-        estimator.cpp)
+        )
 target_link_libraries(vins backend)
