@@ -13,5 +13,9 @@ include_directories("${GRAPH_OPTIMIZATION_SOURCE_DIR}/thirdparty/Sophus")
 add_subdirectory(lib)
 add_subdirectory(modules)
 
+target_link_libraries(backend so_plus tic_toc)
+
+target_link_libraries(fdsi backend so_plus tic_toc)
+
 add_executable(GraphOptimization main.cpp)
-target_link_libraries(GraphOptimization PUBLIC backend fdsi test_ba vins)
+target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc)
