@@ -25,9 +25,9 @@ namespace graph_optimization {
          */
         explicit Edge(unsigned long residual_dimension, unsigned long num_vertices,
                       const std::vector<std::string> &vertices_types = std::vector<std::string>(),
-                      unsigned loss_function_type=3);
+                      LossFunction::Type loss_function_type=LossFunction::Type::TRIVIAL);
 
-        virtual ~Edge();
+        virtual ~Edge() = default;
 
         /// 返回id
         unsigned long id() const { return _id; }
@@ -59,14 +59,7 @@ namespace graph_optimization {
             return false;
         }
 
-        bool set_loss_function(LossFunction *loss_function) {
-            if (loss_function) {
-                delete _loss_function;
-                _loss_function = loss_function;
-                return true;
-            }
-            return false;
-        }
+        void set_loss_function(const std::shared_ptr<LossFunction> &loss_function) { _loss_function = loss_function; }
 
         /// 返回第i个顶点
         std::shared_ptr<Vertex> get_vertex(unsigned long i) { return _vertices[i]; }
@@ -131,7 +124,7 @@ namespace graph_optimization {
         Vec3 _rho;                      ///< rho(e^2), rho'(e^2), rho''(e^2)
         MatXX _information;             ///< 信息矩阵
         VecX _observation;              ///< 观测信息
-        LossFunction *_loss_function;
+        std::shared_ptr<LossFunction> _loss_function;
 
     private:
         static unsigned long _global_edge_id;

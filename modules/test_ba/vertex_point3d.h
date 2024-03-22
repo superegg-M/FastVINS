@@ -5,7 +5,8 @@
 #ifndef GRAPH_OPTIMIZATION_VERTEX_POINT_3D_H
 #define GRAPH_OPTIMIZATION_VERTEX_POINT_3D_H
 
-#include <lib/backend/vertex.h>
+//#include <lib/backend/vertex.h>
+#include "backend/vertex.h"
 
 namespace graph_optimization {
     class VertexPoint3d : public Vertex {

@@ -7,7 +7,7 @@
 
 //#include <glog/logging.h>
 #include <Eigen/Dense>
-#include <lib/tic_toc/tic_toc.h>
+#include "tic_toc/tic_toc.h"
 #include "problem.h"
 
 

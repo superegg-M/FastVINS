@@ -9,7 +9,8 @@
 namespace graph_optimization {
     unsigned long Edge::_global_edge_id = 0;
 
-    Edge::Edge(unsigned long residual_dimension, unsigned long num_vertices, const std::vector<std::string> &vertices_types, unsigned loss_function_type) {
+    Edge::Edge(unsigned long residual_dimension, unsigned long num_vertices, const std::vector<std::string> &vertices_types,
+               LossFunction::Type loss_function_type) {
         _residual.resize(residual_dimension, 1);
         _vertices.reserve(num_vertices);
         if (!vertices_types.empty()) {
@@ -22,23 +23,19 @@ namespace graph_optimization {
         _information.setIdentity();
 
         switch (loss_function_type) {
-            case 1:
-                _loss_function = new HuberLoss;
+            case LossFunction::Type::HUBER:
+                _loss_function = std::make_shared<HuberLoss>(1.);
                 break;
-            case 2:
-                _loss_function = new CauchyLoss;
+            case LossFunction::Type::CAUCHY:
+                _loss_function = std::make_shared<CauchyLoss>(1.);
                 break;
-            case 3:
-                _loss_function = new TukeyLoss;
+            case LossFunction::Type::TUKEY:
+                _loss_function = std::make_shared<TukeyLoss>(2.);
                 break;
             default:
-                _loss_function = new TrivialLoss;
+                _loss_function = std::make_shared<TrivialLoss>();
                 break;
         }
-    }
-
-    Edge::~Edge() {
-        delete _loss_function;
     }
 
     void Edge::compute_chi2() {

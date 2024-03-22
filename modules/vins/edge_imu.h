@@ -5,8 +5,9 @@
 #ifndef GRAPH_OPTIMIZATION_EDGE_IMU_H
 #define GRAPH_OPTIMIZATION_EDGE_IMU_H
 
-#include <lib/backend/edge.h>
+//#include <lib/backend/edge.h>
 #include <utility>
+#include "backend/edge.h"
 #include "imu_integration.h"
 
 namespace graph_optimization {

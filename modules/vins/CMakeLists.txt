@@ -8,4 +8,9 @@ add_library(vins
         imu_integration.cpp
         feature_manager.cpp
         )
-target_link_libraries(vins backend)
+
+find_library(BACKEND_LIB backend
+        ../../lib/backend
+)
+
+target_link_libraries(vins ${BACKEND_LIB})

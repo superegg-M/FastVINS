@@ -5,8 +5,9 @@
 #ifndef GRAPH_OPTIMIZATION_IMU_INTEGRATION_H
 #define GRAPH_OPTIMIZATION_IMU_INTEGRATION_H
 
-#include <lib/backend/eigen_types.h>
+//#include <lib/backend/eigen_types.h>
 #include <lib/thirdparty/Sophus/sophus/so3.hpp>
+#include "backend/eigen_types.h"
 
 namespace graph_optimization {
     class IMUIntegration {

@@ -5,7 +5,8 @@
 #ifndef GRAPH_OPTIMIZATION_VERTEX_MOTION_H
 #define GRAPH_OPTIMIZATION_VERTEX_MOTION_H
 
-#include <lib/backend/vertex.h>
+//#include <lib/backend/vertex.h>
+#include "backend/vertex.h"
 
 namespace graph_optimization {
     class VertexMotion : public Vertex {

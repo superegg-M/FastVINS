@@ -5,9 +5,11 @@
 #ifndef GRAPH_OPTIMIZATION_FDSI_EDGE_H
 #define GRAPH_OPTIMIZATION_FDSI_EDGE_H
 
-#include <lib/backend/problem.h>
-#include <lib/backend/eigen_types.h>
+//#include <lib/backend/problem.h>
+//#include <lib/backend/eigen_types.h>
 #include <vector>
+#include "backend/problem.h"
+#include "backend/eigen_types.h"
 
 namespace system_identification {
     namespace frequency_domain {
@@ -19,7 +21,7 @@ namespace system_identification {
         public:
             EIGEN_MAKE_ALIGNED_OPERATOR_NEW
             FDSIEdge(double w, double re, double im)
-                    : Edge(2, 1, std::vector<std::string>{"FDSI"}, 2), _w(w), _re(re), _im(im) {}
+                    : Edge(2, 1, std::vector<std::string>{"FDSI"}, LossFunction::Type::CAUCHY), _w(w), _re(re), _im(im) {}
 
             // 计算曲线模型误差
             void compute_residual() override;

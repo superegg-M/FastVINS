@@ -5,16 +5,18 @@
 #ifndef GRAPH_OPTIMIZATION_EDGE_REPROJECTION_H
 #define GRAPH_OPTIMIZATION_EDGE_REPROJECTION_H
 
-#include <lib/backend/edge.h>
+//#include <lib/backend/edge.h>
 
 #include <utility>
+#include "backend/edge.h"
 
 namespace graph_optimization {
     class EdgeReprojection : public Edge {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
         explicit EdgeReprojection(Vec3 pt_i, Vec3 pt_j)
-                : Edge(2, 4, std::vector<std::string>{"VertexInverseDepth", "VertexPose", "VertexPose", "VertexPose"}, 2),
+                : Edge(2, 4, std::vector<std::string>{"VertexInverseDepth", "VertexPose", "VertexPose", "VertexPose"},
+                       LossFunction::Type::CAUCHY),
                   _pt_i(std::move(pt_i)), _pt_j(std::move(pt_j)) {}
 
         /// 返回边的类型信息

@@ -5,8 +5,10 @@
 #ifndef GRAPH_OPTIMIZATION_IMU_INTEGRATION_H
 #define GRAPH_OPTIMIZATION_IMU_INTEGRATION_H
 
-#include <lib/backend/eigen_types.h>
-#include <lib/thirdparty/Sophus/sophus/so3.hpp>
+//#include <lib/backend/eigen_types.h>
+#include "backend/eigen_types.h"
+#include "thirdparty/Sophus/sophus/so3.hpp"
+//#include <lib/thirdparty/Sophus/sophus/so3.hpp>
 
 namespace vins {
     using namespace graph_optimization;

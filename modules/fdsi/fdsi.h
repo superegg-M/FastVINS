@@ -5,9 +5,11 @@
 #ifndef GRAPH_OPTIMIZATION_FDSI_H
 #define GRAPH_OPTIMIZATION_FDSI_H
 
-#include <lib/backend/problem.h>
-#include <lib/backend/eigen_types.h>
+//#include <lib/backend/problem.h>
+//#include <lib/backend/eigen_types.h>
 #include <vector>
+#include "backend/problem.h"
+#include "backend/eigen_types.h"
 #include "fdsi_vertex.h"
 #include "fdsi_edge.h"
 

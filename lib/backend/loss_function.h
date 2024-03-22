@@ -5,7 +5,7 @@
 #ifndef GRAPH_OPTIMIZATION_LOSS_FUNCTION_H
 #define GRAPH_OPTIMIZATION_LOSS_FUNCTION_H
 
-#include <lib/backend/eigen_types.h>
+#include "eigen_types.h"
 
 namespace graph_optimization {
     /**
@@ -19,7 +19,7 @@ namespace graph_optimization {
      */
     class LossFunction {
     public:
-        enum class LossFunctionType {
+        enum class Type {
             TRIVIAL,
             HUBER,
             CAUCHY,

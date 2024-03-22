@@ -5,9 +5,10 @@
 #ifndef GRAPH_OPTIMIZATION_EDGE_REPROJECTION_H
 #define GRAPH_OPTIMIZATION_EDGE_REPROJECTION_H
 
-#include <lib/backend/edge.h>
+//#include <lib/backend/edge.h>
 
 #include <utility>
+#include "backend/edge.h"
 
 namespace graph_optimization {
     class EdgeReprojection : public Edge {

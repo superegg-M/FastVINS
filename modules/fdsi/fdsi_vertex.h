@@ -5,9 +5,11 @@
 #ifndef GRAPH_OPTIMIZATION_FDSI_VERTEX_H
 #define GRAPH_OPTIMIZATION_FDSI_VERTEX_H
 
-#include <lib/backend/problem.h>
-#include <lib/backend/eigen_types.h>
+//#include <lib/backend/problem.h>
+//#include <lib/backend/eigen_types.h>
 #include <vector>
+#include "backend/problem.h"
+#include "backend/eigen_types.h"
 
 namespace system_identification {
     namespace frequency_domain {
