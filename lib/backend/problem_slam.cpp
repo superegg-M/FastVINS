@@ -4,14 +4,15 @@
 
 #include "problem_slam.h"
 
-using namespace std;
+// #define USE_PCG_SOLVER
+
 
 namespace graph_optimization {
     using namespace std;
 
     /*
-    * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
-    * */
+        * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
+        * */
     bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
         // 重新计算一篇ordering
         initialize_ordering();
@@ -41,8 +42,9 @@ namespace graph_optimization {
         MatXX h_state_landmark(MatXX::Zero(cols, cols));
         VecX b_state_landmark(VecX::Zero(cols));
         for (auto &edge : marginalized_edges) {
-            edge->compute_residual();
-            edge->compute_jacobians();
+            // 若曾经solve problem, 则无需再次计算
+            // edge->compute_residual();
+            // edge->compute_jacobians();
             auto &&jacobians = edge->jacobians();
             auto &&vertices = edge->vertices();
 
@@ -96,12 +98,22 @@ namespace graph_optimization {
                 ulong idx = landmark_vertex.second->ordering_id() - state_dim;
                 ulong size = landmark_vertex.second->local_dimension();
                 if (size == 1) {
-                    temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
-                    temp_b(idx) = bll(idx) / Hll(idx, idx);
+                    if (Hll(idx, idx) > 1e-12) {
+                        temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
+                        temp_b(idx) = bll(idx) / Hll(idx, idx);
+                    } else {
+                        temp_H.row(idx).setZero();
+                        temp_b(idx) = 0.;
+                    }
                 } else {
                     auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
-                    temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                    temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
+                    if (Hmm_ldlt.info() == Eigen::Success) {
+                        temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
+                        temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
+                    } else {
+                        temp_H.block(idx, 0, size, state_dim).setZero();
+                        temp_b.segment(idx, size).setZero();
+                    }
                 }
             }
 
@@ -160,12 +172,23 @@ namespace graph_optimization {
             VecX temp_b(VecX::Zero(marginalized_size, 1));   // Hmm^-1 * bm
             ulong size = vertex->local_dimension();
             if (size == 1) {
-                temp_H = Hrm.transpose() / Hmm(0, 0);
-                temp_b = bmm / Hmm(0, 0);
+                if (Hmm(0, 0) > 1e-12) {
+                    temp_H = Hrm.transpose() / Hmm(0, 0);
+                    temp_b = bmm / Hmm(0, 0);
+                } else {
+                    temp_H.setZero();
+                    temp_b.setZero();
+                }
+
             } else {
                 auto Hmm_ldlt = Hmm.ldlt();
-                temp_H = Hmm_ldlt.solve(Hrm.transpose());
-                temp_b = Hmm_ldlt.solve(bmm);
+                if (Hmm_ldlt.info() == Eigen::Success) {
+                    temp_H = Hmm_ldlt.solve(Hrm.transpose());
+                    temp_b = Hmm_ldlt.solve(bmm);
+                } else {
+                    temp_H.setZero();
+                    temp_b.setZero();
+                }
             }
 
             // (Hrr - Hrm * Hmm^-1 * Hmr) * dxp = br - Hrm * Hmm^-1 * bm
@@ -269,7 +292,7 @@ namespace graph_optimization {
         // Solve: Hpp * delta_x = bpp
         VecX delta_x_pp(VecX::Zero(reserve_size));
 #ifdef USE_PCG_SOLVER
-        auto n_pcg = _h_pp_schur.rows() * 2;                       // 迭代次数
+        auto n_pcg = _h_pp_schur.rows();                       // 迭代次数
         delta_x_pp = PCG_solver(_h_pp_schur, _b_pp_schur, n_pcg);
 #else
         auto &&H_pp_schur_ldlt = _h_pp_schur.ldlt();
