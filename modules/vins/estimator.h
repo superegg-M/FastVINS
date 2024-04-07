@@ -7,6 +7,7 @@
 
 #include "parameters.h"
 #include "feature_manager.h"
+#include "data_manager.h"
 //#include "utility/utility.h"
 //#include "utility/tic_toc.h"
 //#include "initial/solve_5pts.h"
@@ -14,17 +15,21 @@
 //#include "initial/initial_alignment.h"
 //#include "initial/initial_ex_rotation.h"
 
-//#include "factor/integration_base.h"
+#include "backend/eigen_types.h"
+#include "backend/problem.h"
+#include "backend/problem_slam.h"
 
-//#include "backend/problem.h"
-#include <lib/backend/problem_slam.h>
-#include <lib/backend/eigen_types.h>
 
 #include <unordered_map>
 #include <queue>
 //#include <opencv2/core/eigen.hpp>
 
 #include "imu_integration.h"
+#include "edge_imu.h"
+#include "edge_reprojection.h"
+#include "vertex_inverse_depth.h"
+#include "vertex_pose.h"
+#include "vertex_motion.h"
 
 namespace vins {
     using namespace graph_optimization;
@@ -72,7 +77,6 @@ namespace vins {
             MARGIN_SECOND_NEW = 1
         };
 //////////////// OUR SOLVER ///////////////////
-        slam::ProblemSLAM _problem;
         MatXX Hprior_;
         VecX bprior_;
         VecX errprior_;
@@ -153,6 +157,20 @@ namespace vins {
         Vector3d relo_relative_t;
         Quaterniond relo_relative_q;
         double relo_relative_yaw;
+
+    private:
+        State _state;
+        graph_optimization::ProblemSLAM _problem;
+
+        IMUIntegration *_imu_integration {nullptr};
+        Vec3 _acc_latest {};
+        Vec3 _gyro_latest {};
+
+        unordered_map<unsigned long, FeatureNode*> _feature_map;
+        unordered_map<unsigned long, FrameNode*> _feature_based_frame;
+
+        ImuNode *_imu_node;
+        ImuWindows _windows;
     };
 }
 
