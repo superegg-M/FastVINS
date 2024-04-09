@@ -41,7 +41,7 @@ namespace graph_optimization {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
         explicit EdgeReprojectionPoint3d(Vec3 pt_i)
-                : Edge(2, 2, std::vector<std::string>{"VertexPoint3d", "VertexPose"}),
+                : Edge(2, 3, std::vector<std::string>{"VertexPoint3d", "VertexPose", "VertexPose"}),
                   _pt_i(std::move(pt_i)) {}
 
         /// 返回边的类型信息

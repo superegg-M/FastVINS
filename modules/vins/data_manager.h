@@ -5,12 +5,14 @@
 #ifndef VINS_DATA_MANAGER_H
 #define VINS_DATA_MANAGER_H
 
+#include <iostream>
 #include <unordered_map>
 #include "parameters.h"
 #include "imu_integration.h"
 #include "edge_imu.h"
 #include "edge_reprojection.h"
 #include "vertex_inverse_depth.h"
+#include "vertex_point3d.h"
 #include "vertex_pose.h"
 #include "vertex_motion.h"
 
@@ -202,35 +204,41 @@ namespace vins {
         shared_ptr<VertexMotion> vertex_motion {new VertexMotion};
 
 //        vector<pair<unsigned long, FrameNode*>> frames; ///< 每个相机的frame
-        unordered_map<unsigned long, vector<pair<unsigned long, Vec3>>> features;
+        unordered_map<unsigned long, vector<pair<unsigned long, Vec3>>> features_in_cameras;
 
         IMUIntegration *imu_integration;
     };
 
-    class FrameNode {
-    public:
-        explicit FrameNode(unsigned long id, ImuNode *imu);
-        unsigned long id() const { return _camera_id; }
-        ImuNode *imu_pt() const { return _imu_pt; }
-        bool is_feature_in_frame(unsigned long feature_id) const { return features.find(feature_id) != features.end(); }
-
-    public:
-        unordered_map<unsigned long, pair<FeatureNode*, Vec3>> features;
-
-    private:
-        const unsigned long _camera_id;
-        ImuNode *_imu_pt;
-    };
+//    class FrameNode {
+//    public:
+//        explicit FrameNode(unsigned long id, ImuNode *imu);
+//        unsigned long id() const { return _camera_id; }
+//        ImuNode *imu_pt() const { return _imu_pt; }
+//        bool is_feature_in_frame(unsigned long feature_id) const { return features.find(feature_id) != features.end(); }
+//
+//    public:
+//        unordered_map<unsigned long, pair<FeatureNode*, Vec3>> features;
+//
+//    private:
+//        const unsigned long _camera_id;
+//        ImuNode *_imu_pt;
+//    };
 
     class FeatureNode {
     public:
         explicit FeatureNode(unsigned long id);
 
         unsigned long id() const { return _feature_id; }
-        pair<unsigned long, FrameNode *> get_reference_frame() const { return imu_deque[0]->frames[0]; }
+//        pair<unsigned long, FrameNode *> get_reference_frame() const { return imu_deque[0]->frames[0]; }
+        void from_global_to_local(const std::vector<Qd> &q_ic, const vector<Vec3> &t_ic);
+        void from_local_to_global(const std::vector<Qd> &q_ic, const vector<Vec3> &t_ic);
 
     public:
+        bool is_triangulated {false};
+        Vec3 point;
+
         shared_ptr<VertexInverseDepth> vertex_landmark {nullptr};
+        shared_ptr<VertexPoint3d> vertex_point3d {nullptr};
         Deque<ImuNode *> imu_deque;
 
     private:

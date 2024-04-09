@@ -27,6 +27,7 @@
 #include "imu_integration.h"
 #include "edge_imu.h"
 #include "edge_reprojection.h"
+#include "edge_pnp.h"
 #include "vertex_inverse_depth.h"
 #include "vertex_pose.h"
 #include "vertex_motion.h"
@@ -49,8 +50,16 @@ namespace vins {
         // internal
         void clear_state();
         bool initial_structure();
+        void global_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce=false);
+        void local_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce=false);
+        void global_triangulate_between(unsigned long i, unsigned long j, bool enforce=false);
+        void local_triangulate_between(unsigned long i, unsigned long j, bool enforce=false);
+        void global_triangulate_feature(FeatureNode* feature, bool enforce=false);
+        void local_triangulate_feature(FeatureNode* feature, bool enforce=false);
+        void pnp(ImuNode *imu_i, Qd *q_wi_init=nullptr, Vec3 *t_wi_init=nullptr);
+        bool structure_from_motion();
         bool visual_initial_align();
-        bool relative_pose(Matrix3d &relative_R, Vector3d &relative_T, int &l);
+        bool relative_pose(Matrix3d &r, Vector3d &t, unsigned long &imu_index);
         void slide_window();
         void solve_odometry();
         void slide_window_new();
@@ -161,6 +170,10 @@ namespace vins {
     private:
         State _state;
         graph_optimization::ProblemSLAM _problem;
+
+        shared_ptr<VertexPose> _vertex_ext[NUM_OF_CAM]; // 相机的外参
+        vector<Qd> _q_ic {NUM_OF_CAM};
+        vector<Vec3> _t_ic{NUM_OF_CAM};
 
         IMUIntegration *_imu_integration {nullptr};
         Vec3 _acc_latest {};

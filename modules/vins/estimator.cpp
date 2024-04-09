@@ -9,8 +9,9 @@
 #include "edge_reprojection.h"
 #include "edge_imu.h"
 
-#include <lib/tic_toc/tic_toc.h>
+#include "tic_toc/tic_toc.h"
 
+#include <iostream>
 #include <ostream>
 #include <fstream>
 
@@ -99,6 +100,7 @@ namespace vins {
 
     void Estimator::process_imu(double dt, const Vector3d &linear_acceleration, const Vector3d &angular_velocity) {
         if (!_imu_integration) {
+            // TODO: 把last的初值置为nan, 若为nan时，才进行赋值
             _acc_latest = linear_acceleration;
             _gyro_latest = angular_velocity;
             _imu_integration = new IMUIntegration {_acc_latest, _gyro_latest, _state.ba, _state.bg};
@@ -122,6 +124,8 @@ namespace vins {
     void Estimator::process_image(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double header) {
         // 创建imu节点, 需要在marg后加入到windows中
         _imu_node = new ImuNode {_imu_integration};
+
+        // 需要在process_imu重新new
         _imu_integration = nullptr;
 
         // 设置imu顶点的参数
@@ -167,22 +171,22 @@ namespace vins {
                 ++last_track_num;   // 记录有几个特征点被跟踪了
             }
 
-            // 先不要把当前的imu node加入到feature的imu deque中, 在slide后再添加
+            // 先不要把当前的imu node加入到feature的imu deque以及windows中, 等到在slide的时候再添加
 
             // TODO: 这里假设只有一个双目，后续需要考虑多个双目的情况
             // 遍历看到当前feature的每个camera, 记录feature在camera中的像素坐标
             auto &&cameras = landmark.second;
             for (auto &camera : cameras) {
                 Vec3 point {camera.second.x(), camera.second.y(), camera.second.z()};
-                _imu_node->features[feature_id].emplace_back(camera.first, point);
+                _imu_node->features_in_cameras[feature_id].emplace_back(camera.first, point);
             }
 
             // 判断feature是否能够被用于计算重投影误差
             if (_windows.is_feature_suitable_to_reproject(feature_id)) {
                 // 获取feature的参考值
-                auto &&host_imu = feature_node->imu_deque[0];   // 第一次看到feature的imu
+                auto &&host_imu = feature_node->imu_deque.oldest();   // 第一次看到feature的imu
                 auto &&host_imu_pose = host_imu->vertex_pose;   // imu的位姿
-                auto &&host_cameras = host_imu->features[feature_id];    // imu中，与feature对应的相机信息
+                auto &&host_cameras = host_imu->features_in_cameras[feature_id];    // imu中，与feature对应的相机信息
                 auto &&host_camera_id = host_cameras[0].first;  // camera的id
                 auto &&host_pixel_coord = host_cameras[0].second;    // feature在imu的左目的像素坐标
 
@@ -198,7 +202,7 @@ namespace vins {
                     // 使用三角化, 对landmark进行初始化
                     unsigned long num_frames = cameras.size();  // 当前imu看到该feature的相机数
                     for (unsigned long i = 0; i < feature_node->imu_deque.size(); ++i) {    // windows中, 看到该feature的相机数
-                        num_frames += feature_node->imu_deque[i]->features[feature_id].size();
+                        num_frames += feature_node->imu_deque[i]->features_in_cameras[feature_id].size();
                     }
                     Eigen::MatrixXd svd_A(2 * num_frames, 4);
                     Eigen::Matrix<double, 3, 4> P;
@@ -252,11 +256,11 @@ namespace vins {
                         edge_reproj->set_vertex(_vertex_ext[other_camera_id], 3);
                     }
 
-                    // 其他imu
+                    // deque中除了host的其他imu
                     for (unsigned long i = 1; i < feature_node->imu_deque.size(); ++i) {
                         auto &&other_imu = feature_node->imu_deque[i];   // 除了第一次看到feature的其他imu
                         auto &&other_imu_pose = other_imu->vertex_pose; // imu的位姿
-                        auto &&other_cameras = other_imu->features[feature_id];    // imu中，与feature对应的相机信息
+                        auto &&other_cameras = other_imu->features_in_cameras[feature_id];    // imu中，与feature对应的相机信息
 
                         // 从vertex中获取位姿
                         Vec3 p_j {other_imu_pose->get_parameters()(0), other_imu_pose->get_parameters()(1), other_imu_pose->get_parameters()(2)};
@@ -264,7 +268,7 @@ namespace vins {
                         Mat33 r_j {q_j.toRotationMatrix()};
 
                         // 遍历所有cameras
-                        for (unsigned long j = 0; j < feature_node->imu_deque[i]->features.size(); ++j) {
+                        for (unsigned long j = 0; j < other_cameras.size(); ++j) {
                             ++index;
 
                             // 获取feature的参考值
@@ -295,6 +299,35 @@ namespace vins {
                         }
                     }
 
+                    // 当前的imu
+                    auto state_r = _state.q.toRotationMatrix();
+                    for (auto &camera : cameras) {
+                        unsigned long current_camera_id = camera.first;  // camera的id
+                        Vec3 current_pixel_coord = {camera.second.x(), camera.second.y(), camera.second.z()};    // feature在imu的左目的像素坐标
+
+                        Eigen::Vector3d t_wcj_w = _state.p + state_r * tic[current_camera_id];
+                        Eigen::Matrix3d r_wcj = state_r * ric[current_camera_id];
+                        Eigen::Vector3d t_cicj_ci = r_wci.transpose() * (t_wcj_w - t_wci_w);
+                        Eigen::Matrix3d r_cicj = r_wci.transpose() * r_wcj;
+
+                        P.leftCols<3>() = r_cicj.transpose();
+                        P.rightCols<1>() = -r_cicj.transpose() * t_cicj_ci;
+
+                        f = current_pixel_coord.normalized();
+                        svd_A.row(2 * index) = f[0] * P.row(2) - f[2] * P.row(0);
+                        svd_A.row(2 * index + 1) = f[1] * P.row(2) - f[2] * P.row(1);
+
+                        // 构建视觉重投影误差边
+                        shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
+                                host_pixel_coord,
+                                current_pixel_coord
+                        ));
+                        edge_reproj->set_vertex(feature_node->vertex_landmark, 0);
+                        edge_reproj->set_vertex(host_imu_pose, 1);
+                        edge_reproj->set_vertex(_imu_node->vertex_pose, 2);
+                        edge_reproj->set_vertex(_vertex_ext[current_camera_id], 3);
+                    }
+
                     // 最小二乘计算深度
                     Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
                     double depth = svd_V[2] / svd_V[3];
@@ -302,7 +335,7 @@ namespace vins {
                         depth = INIT_DEPTH;
                     }
 
-                    // 设置landmark的逆深度
+                    // 设置landmark顶点的逆深度
                     vertex_landmark->set_parameters(Vec1(1. / depth));
                 } else {
                     // 对当前imu下的所有cameras计算视觉重投影误差
@@ -333,10 +366,12 @@ namespace vins {
             } else {
                 ref_imu = _windows[_windows.size() - 2];
             }
-            auto &&ref_imu_it = ref_imu->features.find(feature_id);
-            if (ref_imu_it != ref_imu->features.end()) {
-                double u_i = ref_imu_it->second[0].second.x();
-                double v_i = ref_imu_it->second[0].second.y();
+            auto &&ref_cameras_it = ref_imu->features_in_cameras.find(feature_id);
+            if (ref_cameras_it != ref_imu->features_in_cameras.end()) {
+                auto &&ref_cameras = ref_cameras_it->second;
+
+                double u_i = ref_cameras[0].second.x();
+                double v_i = ref_cameras[0].second.y();
 
                 double u_j = cameras[0].second.x();
                 double v_j = cameras[0].second.y();
@@ -460,36 +495,503 @@ namespace vins {
             _state.bg = _imu_node->get_bg();
         }
     }
-    bool Estimator::initialStructure() {
-        TicToc t_sfm;
-        //check imu observibility
-        {
-            map<double, ImageFrame>::iterator frame_it;
-            Vector3d sum_g;
-            for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
-            {
-                double dt = frame_it->second.pre_integration->sum_dt;
-                Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-                sum_g += tmp_g;
+
+    void Estimator::global_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce) {
+        if (imu_i == imu_j) {
+            return;
+        }
+
+        for (auto &feature_in_cameras : imu_i->features_in_cameras) {
+            auto &&feature_it = _feature_map.find(feature_in_cameras.first);
+            if (feature_it == _feature_map.end()) {
+                std::cout << "Error: feature not in feature_map when running global_triangulate_with" << std::endl;
+                continue;
             }
-            Vector3d aver_g;
-            aver_g = sum_g * 1.0 / ((int)all_image_frame.size() - 1);
-            double var = 0;
-            for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
-            {
-                double dt = frame_it->second.pre_integration->sum_dt;
-                Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-                var += (tmp_g - aver_g).transpose() * (tmp_g - aver_g);
-                //cout << "frame g " << tmp_g.transpose() << endl;
+            auto &&feature_in_cameras_j = imu_j->features_in_cameras.find(feature_in_cameras.first);
+            if (feature_in_cameras_j == imu_j->features_in_cameras.end()) {
+                continue;
             }
-            var = sqrt(var / ((int)all_image_frame.size() - 1));
-            //ROS_WARN("IMU variation %f!", var);
-            if (var < 0.25)
-            {
-                // ROS_INFO("IMU excitation not enouth!");
-                //return false;
+
+            if (!feature_it->second->vertex_point3d) {
+                shared_ptr<VertexPoint3d> vertex_point3d(new VertexPoint3d);
+                feature_it->second->vertex_point3d = vertex_point3d;
+            } else if (!enforce) {
+                continue;
+            }
+
+            Eigen::MatrixXd svd_A(4, 4);
+            Eigen::Matrix<double, 3, 4> P;
+            Eigen::Vector3d f;
+
+            // imu_i的信息
+            auto &&i_pose = imu_i->vertex_pose;   // imu的位姿
+            auto &&i_cameras = feature_in_cameras.second;    // imu中，与feature对应的相机信息
+            auto &&i_camera_id = i_cameras[0].first;  // 左目的id
+            auto &&i_pixel_coord = i_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_i {i_pose->get_parameters()(0), i_pose->get_parameters()(1), i_pose->get_parameters()(2)};
+            Qd q_i {i_pose->get_parameters()(6), i_pose->get_parameters()(3), i_pose->get_parameters()(4), i_pose->get_parameters()(5)};
+            Mat33 r_i {q_i.toRotationMatrix()};
+
+            Eigen::Vector3d t_wci_w = p_i + r_i * tic[i_camera_id];
+            Eigen::Matrix3d r_wci = r_i * ric[i_camera_id];
+
+            P.leftCols<3>() = r_wci.transpose();
+            P.rightCols<1>() = -r_wci.transpose() * t_wci_w;
+
+            f = i_pixel_coord / i_pixel_coord.z();
+            svd_A.row(0) = f[0] * P.row(2) - P.row(0);
+            svd_A.row(1) = f[1] * P.row(2) - P.row(1);
+
+            // imu_j的信息
+            auto &&j_pose = imu_j->vertex_pose;   // imu的位姿
+            auto &&j_cameras = feature_in_cameras_j->second;    // imu中，与feature对应的相机信息
+            auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+            auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+            Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+            Mat33 r_j {q_j.toRotationMatrix()};
+
+            Eigen::Vector3d t_wcj_w = p_j + r_j * tic[j_camera_id];
+            Eigen::Matrix3d r_wcj = r_j * ric[j_camera_id];
+
+            P.leftCols<3>() = r_wcj.transpose();
+            P.rightCols<1>() = -r_wcj.transpose() * t_wcj_w;
+
+            f = j_pixel_coord / j_pixel_coord.z();
+            svd_A.row(2) = f[0] * P.row(2) - P.row(0);
+            svd_A.row(3) = f[1] * P.row(2) - P.row(1);
+
+            // 最小二乘计算世界坐标
+            Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+            Vec3 point {svd_V[0] / svd_V[3], svd_V[1] / svd_V[3], svd_V[2] / svd_V[3]};
+            feature_it->second->vertex_point3d->set_parameters(point);
+        }
+    }
+
+    void Estimator::local_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce) {
+        if (imu_i == imu_j) {
+            return;
+        }
+
+        for (auto &feature_in_cameras : imu_i->features_in_cameras) {
+            auto &&feature_it = _feature_map.find(feature_in_cameras.first);
+            if (feature_it == _feature_map.end()) {
+                std::cout << "Error: feature not in feature_map when running local_triangulate_with" << std::endl;
+                continue;
+            }
+            auto &&feature_in_cameras_j = imu_j->features_in_cameras.find(feature_in_cameras.first);
+            if (feature_in_cameras_j == imu_j->features_in_cameras.end()) {
+                continue;
+            }
+
+            if (!feature_it->second->vertex_landmark) {
+                shared_ptr<VertexInverseDepth> vertex_inverse_depth(new VertexInverseDepth);
+                feature_it->second->vertex_landmark = vertex_inverse_depth;
+            } else if (!enforce) {
+                continue;
+            }
+
+            Eigen::MatrixXd svd_A(4, 4);
+            Eigen::Matrix<double, 3, 4> P;
+            Eigen::Vector3d f;
+
+            // imu_i的信息
+            auto &&i_pose = imu_i->vertex_pose;   // imu的位姿
+            auto &&i_cameras = feature_in_cameras.second;    // imu中，与feature对应的相机信息
+            auto &&i_camera_id = i_cameras[0].first;  // 左目的id
+            auto &&i_pixel_coord = i_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_i {i_pose->get_parameters()(0), i_pose->get_parameters()(1), i_pose->get_parameters()(2)};
+            Qd q_i {i_pose->get_parameters()(6), i_pose->get_parameters()(3), i_pose->get_parameters()(4), i_pose->get_parameters()(5)};
+            Mat33 r_i {q_i.toRotationMatrix()};
+
+            Eigen::Vector3d t_wci_w = p_i + r_i * tic[i_camera_id];
+            Eigen::Matrix3d r_wci = r_i * ric[i_camera_id];
+
+            P.leftCols<3>().setIdentity();
+            P.rightCols<1>().setZero();
+
+            f = i_pixel_coord / i_pixel_coord.z();
+            svd_A.row(0) = f[0] * P.row(2) - P.row(0);
+            svd_A.row(1) = f[1] * P.row(2) - P.row(1);
+
+            // imu_j的信息
+            auto &&j_pose = imu_j->vertex_pose;   // imu的位姿
+            auto &&j_cameras = feature_in_cameras_j->second;    // imu中，与feature对应的相机信息
+            auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+            auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+            Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+            Mat33 r_j {q_j.toRotationMatrix()};
+
+            Eigen::Vector3d t_wcj_w = p_j + r_j * tic[j_camera_id];
+            Eigen::Matrix3d r_wcj = r_j * ric[j_camera_id];
+
+            P.leftCols<3>() = r_wcj.transpose() * r_wci;
+            P.rightCols<1>() = r_wcj.transpose() * (t_wci_w - t_wcj_w);
+
+            f = j_pixel_coord / j_pixel_coord.z();
+            svd_A.row(2) = f[0] * P.row(2) - P.row(0);
+            svd_A.row(3) = f[1] * P.row(2) - P.row(1);
+
+            // 最小二乘计算深度
+            Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+            Vec1 inverse_depth {svd_V[3] / svd_V[2]};
+            feature_it->second->vertex_landmark->set_parameters(inverse_depth);
+        }
+    }
+
+    void Estimator::global_triangulate_feature(FeatureNode* feature, bool enforce) {
+        if (!feature) {
+            return;
+        }
+
+        // 若imu数小于2，则无法进行三角化
+        auto &&imu_deque = feature->imu_deque;
+        if (imu_deque.size() < 2) {
+            return;
+        }
+
+        if (!feature->vertex_point3d) {
+            shared_ptr<VertexPoint3d> vertex_point3d(new VertexPoint3d);
+            feature->vertex_point3d = vertex_point3d;
+        } else if (!enforce) {
+            return;
+        }
+
+        Eigen::MatrixXd svd_A(2 * imu_deque.size(), 4);
+        Eigen::Matrix<double, 3, 4> P;
+        Eigen::Vector3d f;
+        for (unsigned long j = 0; j < imu_deque.size(); ++j) {
+            // imu_j的信息
+            auto &&imu_j = imu_deque[j];
+            auto &&j_pose = imu_j->vertex_pose;   // imu的位姿
+            auto &&j_feature_in_cameras = imu_j->features_in_cameras.find(feature->id());
+            if (j_feature_in_cameras == imu_j->features_in_cameras.end()) {
+                std::cout << "Error: feature not in features_in_cameras when running global_triangulate_feature" << std::endl;
+                continue;
+            }
+            auto &&j_cameras = j_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+            auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+            auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+            Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+            Mat33 r_j {q_j.toRotationMatrix()};
+
+            Eigen::Vector3d t_wcj_w = p_j + r_j * tic[j_camera_id];
+            Eigen::Matrix3d r_wcj = r_j * ric[j_camera_id];
+
+            P.leftCols<3>() = r_wcj.transpose();
+            P.rightCols<1>() = -r_wcj.transpose() * t_wcj_w;
+
+            f = j_pixel_coord / j_pixel_coord.z();
+            svd_A.row(2 * j) = f[0] * P.row(2) - P.row(0);
+            svd_A.row(2 * j + 1) = f[1] * P.row(2) - P.row(1);
+        }
+
+        // 最小二乘计算世界坐标
+        Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+        Vec3 point {svd_V[0] / svd_V[3], svd_V[1] / svd_V[3], svd_V[2] / svd_V[3]};
+        feature->vertex_point3d->set_parameters(point);
+    }
+
+    void Estimator::local_triangulate_feature(FeatureNode* feature, bool enforce) {
+        if (!feature) {
+            return;
+        }
+
+        // 若imu数小于2，则无法进行三角化
+        auto &&imu_deque = feature->imu_deque;
+        if (imu_deque.size() < 2) {
+            return;
+        }
+
+        if (!feature->vertex_landmark) {
+            shared_ptr<VertexInverseDepth> vertex_inverse_depth(new VertexInverseDepth);
+            feature->vertex_landmark = vertex_inverse_depth;
+        } else if (!enforce) {
+            return;
+        }
+
+        Eigen::MatrixXd svd_A(2 * imu_deque.size(), 4);
+        Eigen::Matrix<double, 3, 4> P;
+        Eigen::Vector3d f;
+
+        // imu_i的信息
+        auto &&imu_i = imu_deque.oldest();
+        auto &&i_pose = imu_i->vertex_pose;   // imu的位姿
+        auto &&i_feature_in_cameras = imu_i->features_in_cameras.find(feature->id());
+        if (i_feature_in_cameras == imu_i->features_in_cameras.end()) {
+            std::cout << "Error: feature not in features_in_cameras when running local_triangulate_feature" << std::endl;
+            return;
+        }
+        auto &&i_cameras = i_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+        auto &&i_camera_id = i_cameras[0].first;  // 左目的id
+        auto &&i_pixel_coord = i_cameras[0].second;    // feature在imu的左目的像素坐标
+
+        Vec3 p_i {i_pose->get_parameters()(0), i_pose->get_parameters()(1), i_pose->get_parameters()(2)};
+        Qd q_i {i_pose->get_parameters()(6), i_pose->get_parameters()(3), i_pose->get_parameters()(4), i_pose->get_parameters()(5)};
+        Mat33 r_i {q_i.toRotationMatrix()};
+
+        Eigen::Vector3d t_wci_w = p_i + r_i * tic[i_camera_id];
+        Eigen::Matrix3d r_wci = r_i * ric[i_camera_id];
+
+        P.leftCols<3>().setIdentity();
+        P.rightCols<1>().setZero();
+
+        f = i_pixel_coord / i_pixel_coord.z();
+        svd_A.row(0) = f[0] * P.row(2) - P.row(0);
+        svd_A.row(1) = f[1] * P.row(2) - P.row(1);
+
+        for (unsigned long j = 1; j < imu_deque.size(); ++j) {
+            // imu_j的信息
+            auto &&imu_j = imu_deque[j];
+            auto &&j_pose = imu_j->vertex_pose;   // imu的位姿
+            auto &&j_feature_in_cameras = imu_j->features_in_cameras.find(feature->id());
+            if (j_feature_in_cameras == imu_j->features_in_cameras.end()) {
+                std::cout << "Error: feature not in features_in_cameras when running global_triangulate_feature" << std::endl;
+                continue;
+            }
+            auto &&j_cameras = j_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+            auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+            auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+            Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+            Mat33 r_j {q_j.toRotationMatrix()};
+
+            Eigen::Vector3d t_wcj_w = p_j + r_j * tic[j_camera_id];
+            Eigen::Matrix3d r_wcj = r_j * ric[j_camera_id];
+
+            P.leftCols<3>() = r_wcj.transpose() * r_wci;
+            P.rightCols<1>() = r_wcj.transpose() * (t_wci_w - t_wcj_w);
+
+            f = j_pixel_coord / j_pixel_coord.z();
+            svd_A.row(2 * j) = f[0] * P.row(2) - P.row(0);
+            svd_A.row(2 * j + 1) = f[1] * P.row(2) - P.row(1);
+        }
+
+        // 最小二乘计算深度
+        Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+        Vec1 inverse_depth {svd_V[3] / svd_V[2]};
+        feature->vertex_landmark->set_parameters(inverse_depth);
+    }
+
+    bool Estimator::structure_from_motion() {
+        // 找出第一个与当前imu拥有足够视差的imu, 同时利用对极几何计算t_i_curr, R_i_curr
+        unsigned long imu_index;
+        Matrix3d r_i_curr;
+        Vector3d t_i_curr;
+        if (!relative_pose(r_i_curr, t_i_curr, imu_index)) {
+            cout << "Not enough features or parallax; Move device around" << endl;
+            return false;
+        }
+
+        // 设置i的位姿
+        auto imu_i = _windows[imu_index];
+        Vec7 pose_i;
+        pose_i << 0., 0., 0., 0., 0., 0., 1.;
+        imu_i->vertex_pose->set_parameters(pose_i);
+
+        // 设置curr的位姿
+        Qd q_i_curr(r_i_curr);
+        Vec7 pose_curr;
+        pose_curr << t_i_curr.x(), t_i_curr.y(), t_i_curr.z(),
+                     q_i_curr.x(), q_i_curr.y(), q_i_curr.z(), q_i_curr.w();
+        _imu_node->vertex_pose->set_parameters(pose_curr);
+
+        // 利用i和curr进行三角化, 计算特征点的世界坐标
+        global_triangulate_with(imu_i, _imu_node);
+
+        /*
+         * 1. 对imu_index后面的点进行pnp, 计算R, t.
+         * 2. 得到R, t后进行三角化, 计算只有在imu_j到imu_node中才出现的特征点的世界坐标, i < j < curr
+         * 3. 利用进行三角化, 计算只有在imu_i到imu_j中才出现的特征点的世界坐标, i < j < curr
+         * */
+        for (unsigned long j = imu_index + 1; _windows.size(); ++j) {
+            // 用 j - 1 的位姿作为 j 的初始位姿估计
+            auto &&pose_j = _windows[j - 1]->vertex_pose->get_parameters();
+            Vec3 t_wj {pose_j(0), pose_j(1), pose_j(2)};
+            Qd q_wj {pose_j(6), pose_j(3), pose_j(4), pose_i(5)};
+
+            // pnp
+            auto &&imu_j = _windows[j];
+            pnp(imu_j, &q_wj, &t_wj);
+
+            // 三角化
+            global_triangulate_with(imu_j, _imu_node);
+
+            // 三角化
+            global_triangulate_with(imu_i, imu_j);
+        }
+
+        /*
+         * 0. 假设imu_index - 1与imu_index有共有的特征点, 并且已求得其世界坐标
+         * 1. 对imu_index前面的点进行pnp, 计算R, t.
+         * 2. 得到R, t后进行三角化, 计算只有在imu_j到imu_i中才出现的特征点的世界坐标, 0 <= j < i
+         * */
+        for (unsigned long k = 0; k < imu_index; ++k) {
+            unsigned long j = imu_index - k - 1;
+
+            // 用 j + 1 的位姿作为 j 的初始位姿估计
+            auto &&pose_j = _windows[j + 1]->vertex_pose->get_parameters();
+            Vec3 t_wj {pose_j(0), pose_j(1), pose_j(2)};
+            Qd q_wj {pose_j(6), pose_j(3), pose_j(4), pose_j(5)};
+
+            // pnp
+            auto &&imu_j = _windows[j];
+            pnp(imu_j, &q_wj, &t_wj);
+
+            // 三角化
+            global_triangulate_with(imu_j, imu_i);
+        }
+
+        // 遍历所有特征点, 对没有赋值的特征点进行三角化
+        for (auto &feature_it : _feature_map) {
+            global_triangulate_feature(feature_it.second);
+        }
+
+        // VO优化
+        ProblemSLAM problem;
+
+        // 把imu加入到problem中
+        for (unsigned long i = 0; i < _windows.size(); ++i) {
+            problem.add_vertex(_windows[i]->vertex_pose);
+        }
+
+        // 把特征点的世界坐标转换成深度，同时把特征点加入到problem中
+        for (auto &feature_it : _feature_map) {
+            unsigned long feature_id = feature_it.first;
+            auto feature_node = feature_it.second;
+            feature_node->from_global_to_local(_q_ic, _t_ic);
+
+            if (feature_node->vertex_landmark) {
+                // 把特征点加入到problem中
+                problem.add_vertex(feature_node->vertex_landmark);
+
+                // 构建重投影edge
+                auto &&imu_deque = feature_node->imu_deque;
+                if (imu_deque.size() > 1) {
+                    // host imu
+                    auto &&host_imu = imu_deque.oldest();
+                    auto &&host_feature_in_cameras = host_imu->features_in_cameras.find(feature_id);
+                    if (host_feature_in_cameras == host_imu->features_in_cameras.end()) {
+                        continue;
+                    }
+                    auto &&host_cameras = host_feature_in_cameras->second;
+                    auto &&host_camera_id = host_cameras[0].first;
+                    auto &&host_point_pixel = host_cameras[0].second;
+                    host_point_pixel /= host_point_pixel.z();
+
+                    // 其他imu
+                    for (unsigned long j = 1; j < imu_deque.size(); ++j) {
+                        auto &j_imu = imu_deque[j];
+                        auto &&j_feature_in_cameras = j_imu->features_in_cameras.find(feature_id);
+                        if (j_feature_in_cameras == j_imu->features_in_cameras.end()) {
+                            continue;
+                        }
+                        auto &&j_cameras = j_feature_in_cameras->second;
+                        auto &&j_camera_id = j_cameras[0].first;
+                        auto &&j_point_pixel = j_cameras[0].second;
+                        j_point_pixel /= j_point_pixel.z();
+
+                        auto edge_reproj = shared_ptr<EdgeReprojection>(new EdgeReprojection(host_point_pixel, j_point_pixel));
+                        edge_reproj->set_vertex(feature_node->vertex_landmark, 0);
+                        edge_reproj->set_vertex(host_imu->vertex_pose, 1);
+                        edge_reproj->set_vertex(j_imu->vertex_pose, 2);
+                        edge_reproj->set_vertex(_vertex_ext[0], 3);
+
+                        // 把edge加入到problem中
+                        problem.add_edge(edge_reproj);
+
+                        // 外参不参与优化
+                        _vertex_ext[0]->is_fixed();
+                    }
+                }
             }
         }
+
+
+
+
+    }
+
+    void Estimator::pnp(ImuNode *imu_i, Qd *q_wi_init, Vec3 *t_wi_init) {
+        Qd q_wi;
+        Vec3 t_wi;
+        if (q_wi_init) {
+            q_wi = *q_wi_init;
+        } else {
+            q_wi.setIdentity();
+        }
+        if (t_wi_init) {
+            t_wi = *t_wi_init;
+        } else {
+            t_wi.setZero();
+        }
+
+        // 对imu的pose进行初始化
+        Vec7 pose;
+        pose << t_wi.x(), t_wi.y(), t_wi.z(),
+                q_wi.x(), q_wi.y(), q_wi.z(), q_wi.w();
+        imu_i->vertex_pose->set_parameters(pose);
+
+        // 相机外参
+        auto &&pose_ext = _vertex_ext[0]->get_parameters();
+        Vec3 t_ic {pose_ext(0), pose_ext(1), pose_ext(2)};
+        Qd q_ic {pose_ext(6), pose_ext(3), pose_ext(4), pose_ext(5)};
+
+        Problem problem;
+        problem.add_vertex(imu_i->vertex_pose); // 加入imu的位姿
+        for (auto &feature_in_cameras : imu_i->features_in_cameras) {
+            auto &&feature_it = _feature_map.find(feature_in_cameras.first);
+            if (feature_it == _feature_map.end()) {
+                std::cout << "Error: feature not in feature_map when running pnp" << std::endl;
+                continue;
+            }
+            if (feature_it->second->vertex_point3d) {
+                auto &&point_pixel = feature_in_cameras.second[0].second;
+                Vec3 point_world = feature_it->second->vertex_point3d->get_parameters();
+
+                // 重投影edge
+                auto edge_pnp = shared_ptr<EdgePnP>(new EdgePnP(point_pixel, point_world));
+                edge_pnp->set_translation_imu_from_camera(q_ic, t_ic);
+                edge_pnp->set_vertex(imu_i->vertex_pose, 0);
+
+                problem.add_edge(edge_pnp);
+            }
+        }
+        problem.solve(10);
+    }
+
+    bool Estimator::initial_structure() {
+        TicToc t_sfm;
+        // 通过加速度计的方差判断可观性
+
+        // 遍历windows
+        Vector3d aver_acc {};
+        for (unsigned long i = 1; i < _windows.size(); ++i) {
+            aver_acc += _windows[i]->imu_integration->get_delta_v() / _windows[i]->imu_integration->get_sum_dt();
+        }
+        aver_acc /= double(_windows.size() - 1);
+
+        double var = 0.;
+        for (unsigned long i = 1; i < _windows.size(); ++i) {
+            Vec3 res = _windows[i]->imu_integration->get_delta_v() / _windows[i]->imu_integration->get_sum_dt() - aver_acc;
+            var += aver_acc.squaredNorm();
+        }
+        var /= double(_windows.size() - 1);
+
+        constexpr static double var_lim = 0.25 * 0.25;
+        if (var < var_lim) {
+            std::cout << "Warning: IMU excitation not enouth" << std::endl;
+//            return false;
+        }
+
         // global sfm
         Quaterniond Q[frame_count + 1];
         Vector3d T[frame_count + 1];
@@ -509,14 +1011,16 @@ namespace vins {
             }
             sfm_f.push_back(tmp_feature);
         }
+
+        // 找出第一个与当前imu拥有足够视差的imu
+        unsigned long imu_index;
         Matrix3d relative_R;
         Vector3d relative_T;
-        int l;
-        if (!relativePose(relative_R, relative_T, l))
-        {
+        if (!relative_pose(relative_R, relative_T, imu_index)) {
             cout << "Not enough features or parallax; Move device around" << endl;
             return false;
         }
+
         GlobalSFM sfm;
         if (!sfm.construct(frame_count + 1, Q, T, l,
                            relative_R, relative_T,
@@ -681,33 +1185,38 @@ namespace vins {
         return true;
     }
 
-    bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
-    {
-        // find previous frame which contians enough correspondance and parallex with newest frame
-        for (int i = 0; i < WINDOW_SIZE; i++)
-        {
+    bool Estimator::relative_pose(Matrix3d &r, Vector3d &t, unsigned long &imu_index) {
+        // 遍历windows中的所有imu, 计算哪个imu是第一个与当前imu拥有足够视差的imu
+        for (unsigned long i = 0; i < _windows.size(); ++i) {
+            // 获取第i个imu与当前imu的共同特征的像素坐标
             vector<pair<Vector3d, Vector3d>> corres;
-            corres = f_manager.getCorresponding(i, WINDOW_SIZE);
-            if (corres.size() > 20)
-            {
-                double sum_parallax = 0;
-                double average_parallax;
-                for (int j = 0; j < int(corres.size()); j++)
-                {
-                    Vector2d pts_0(corres[j].first(0), corres[j].first(1));
-                    Vector2d pts_1(corres[j].second(0), corres[j].second(1));
-                    double parallax = (pts_0 - pts_1).norm();
-                    sum_parallax = sum_parallax + parallax;
+            for (auto &feature_in_cameras : _windows[i]->features_in_cameras) {
+                auto &&it = _imu_node->features_in_cameras.find(feature_in_cameras.first);
+                if (it == _imu_node->features_in_cameras.end()) {
+                    continue;
                 }
-                average_parallax = 1.0 * sum_parallax / int(corres.size());
-                if (average_parallax * 460 > 30 && m_estimator.solveRelativeRT(corres, relative_R, relative_T))
-                {
-                    l = i;
+                corres.emplace_back(feature_in_cameras.second[0].second, it->second[0].second);
+            }
+
+            // 特征点数量大于一定值时，计算视差
+            constexpr static unsigned long corres_count_lim = 20;
+            if (corres.size() > corres_count_lim) {
+                double average_parallax = 0.;
+                for (auto &corre : corres) {
+                    double du = corre.first.x() - corre.second.x();
+                    double dv = corre.first.y() - corre.second.y();
+                    average_parallax += sqrt(du * du + dv * dv);
+                }
+                average_parallax /= double(corres.size());
+
+                if (average_parallax * 460 > 30 && m_estimator.solveRelativeRT(corres, r, t)) {
+                    imu_index = i;
                     //ROS_DEBUG("average_parallax %f choose l %d and newest frame to triangulate the whole structure", average_parallax * 460, l);
                     return true;
                 }
             }
         }
+
         return false;
     }
 
@@ -1336,35 +1845,42 @@ namespace vins {
         if (_windows.full()) {
             if (marginalization_flag == MARGIN_OLD) {
                 ImuNode *imu_oldest;
-                _windows.pop_oldest(imu_oldest);    // 弹出最老的imu
+                _windows.pop_oldest(imu_oldest);    // 弹出windows中最老的imu
 
                 // 遍历被删除的imu的所有特征点，在特征点的imu队列中，删除该imu
-                for (auto &feature : imu_oldest->features) {
-                    auto &&feature_id = feature.first;
+                for (auto &feature_in_cameras : imu_oldest->features_in_cameras) {
+                    auto &&feature_id = feature_in_cameras.first;
                     auto &&feature_it = _feature_map.find(feature_id);
                     if (feature_it == _feature_map.end()) {
-                        std::cout << "!!!!!!!! Can't find feature id in feature map !!!!!!!!!" << std::endl;
+                        std::cout << "!!!!!!!! Can't find feature id in feature map when marg oldest !!!!!!!!!" << std::endl;
                         continue;
                     }
                     auto &&feature_node = feature_it->second;
+                    auto &&vertex_landmark = feature_node->vertex_landmark;
+                    auto &&imu_deque = feature_node->imu_deque;
                     // 应该是不需要进行判断的
-//                    if (feature_node->imu_deque.oldest() == imu_oldest) {
-//                        feature_node->imu_deque.pop_oldest();
+//                    if (imu_deque.oldest() == imu_oldest) {
+//                        imu_deque.pop_oldest();
 //                    }
-                    feature_node->imu_deque.pop_oldest();
+                    imu_deque.pop_oldest();
 
                     // TODO: 删除重投影edge与预积分edge
 
-                    // 需要为特征点重新计算深度, 若特征点的keyframe小于2，则删除该特征点
-                    if (feature_node->imu_deque.size() < 2) {
-                        // TODO: 删除该特征点
+                    // 若特征点的keyframe小于2，则删除该特征点, 否则需要为特征点重新计算深度并且重新构建重投影edge,
+                    if (imu_deque.size() < 2) {
+                        // 在problem中删除特征点
+                        _problem.remove_vertex(vertex_landmark);
+
+                        // 在map中删除特征点
                         _feature_map.erase(feature_id);
+
+                        // 释放特征点node的空间
                         delete feature_node;
 
                         // TODO: 在新的oldest imu中，把feature删除
                     } else {
                         // 曾经的host imu
-                        auto &&oldest_cameras = feature.second;    // imu中，与feature对应的相机信息
+                        auto &&oldest_cameras = feature_in_cameras.second;    // imu中，与feature对应的相机信息
                         auto &&oldest_imu_pose = imu_oldest->vertex_pose;   // imu的位姿
                         auto &&oldest_camera_id = oldest_cameras[0].first;  // camera的id
                         auto &&oldest_pixel_coord = oldest_cameras[0].second;    // feature在imu的左目的像素坐标
@@ -1377,11 +1893,11 @@ namespace vins {
                         Eigen::Matrix3d r_wci = r_i * ric[oldest_camera_id];
 
                         // 现在的host imu
-                        auto &&host_imu = feature_node->imu_deque.oldest();
-                        auto &&host_cameras = host_imu->features[feature_id];
+                        auto &&host_imu = imu_deque.oldest();
+                        auto &&host_cameras = host_imu->features_in_cameras[feature_id];
                         auto &&host_imu_pose = host_imu->vertex_pose;
                         auto &&host_camera_id = host_cameras[0].first;
-//                        auto &&host_pixel_coord = host_cameras[0].second;
+                        auto &&host_pixel_coord = host_cameras[0].second;
 
                         Vec3 p_j {host_imu_pose->get_parameters()(0), host_imu_pose->get_parameters()(1), host_imu_pose->get_parameters()(2)};
                         Qd q_j {host_imu_pose->get_parameters()(6), host_imu_pose->get_parameters()(3), host_imu_pose->get_parameters()(4), host_imu_pose->get_parameters()(5)};
@@ -1391,82 +1907,108 @@ namespace vins {
                         Eigen::Matrix3d r_wcj = r_j * ric[host_camera_id];
 
                         // 从i重投影到j
-                        Vec3 p_cif_ci = oldest_pixel_coord / feature_node->vertex_landmark->get_parameters()(0);
+                        Vec3 p_cif_ci = oldest_pixel_coord / vertex_landmark->get_parameters()(0);
                         Vec3 p_wf_w = r_wci * p_cif_ci + t_wci_w;
                         Vec3 p_cjf_cj = r_wcj.transpose() * (p_wf_w - t_wcj_w);
                         double depth = p_cjf_cj.z();
                         if (depth < 0.1) {
                             depth = INIT_DEPTH;
                         }
-                        feature_node->vertex_landmark->set_parameters(Vec1(1. / depth));
+                        vertex_landmark->set_parameters(Vec1(1. / depth));
+
+                        // 计算重投影误差edge
+                        // host imu的其他camera
+                        for (unsigned long j = 1; j < host_cameras.size(); ++j) {
+                            auto &&other_camera_id = host_cameras[j].first; // camera的id
+                            auto &&other_pixel_coord = host_cameras[j].second;    // feature在imu的左目的像素坐标
+
+                            shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
+                                    host_pixel_coord,
+                                    other_pixel_coord
+                            ));
+                            edge_reproj->set_vertex(vertex_landmark, 0);
+                            edge_reproj->set_vertex(host_imu_pose, 1);
+                            edge_reproj->set_vertex(host_imu_pose, 2);
+                            edge_reproj->set_vertex(_vertex_ext[other_camera_id], 3);
+                        }
+
+                        // 其他imu
+                        for (unsigned long i = 1; i < imu_deque.size(); ++i) {
+                            auto &&other_imu = imu_deque[i];
+                            auto &&other_cameras = other_imu->features_in_cameras[feature_id];
+                            auto &&other_imu_pose = other_imu->vertex_pose;
+
+                            // 遍历所有imu
+                            for (unsigned j = 0; j < other_cameras.size(); ++j) {
+                                auto &&other_camera_id = other_cameras[j].first; // camera的id
+                                auto &&other_pixel_coord = other_cameras[j].second;    // feature在imu的左目的像素坐标
+
+                                shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
+                                        host_pixel_coord,
+                                        other_pixel_coord
+                                ));
+                                edge_reproj->set_vertex(vertex_landmark, 0);
+                                edge_reproj->set_vertex(host_imu_pose, 1);
+                                edge_reproj->set_vertex(other_imu_pose, 2);
+                                edge_reproj->set_vertex(_vertex_ext[other_camera_id], 3);
+                            }
+                        }
                     }
                 }
+                // 释放imu node的空间
                 delete imu_oldest;
-
             } else {
                 ImuNode *imu_newest;
-                _windows.pop_newest(imu_newest);    // 弹出最新的imu
-                _windows.push_newest(_imu_node);    // 加入当前的imu
+                _windows.pop_newest(imu_newest);    // 弹出windows中最新的imu
 
                 // 遍历被删除的imu的所有特征点，在特征点的imu队列中，删除该imu
-                for (auto &feature : imu_newest->features) {
-                    auto &&feature_id = feature.first;
+                for (auto &feature_in_cameras : imu_newest->features_in_cameras) {
+                    auto &&feature_id = feature_in_cameras.first;
                     auto &&feature_it = _feature_map.find(feature_id);
                     if (feature_it == _feature_map.end()) {
-                        std::cout << "!!!!!!!! Can't find feature id in feature map !!!!!!!!!" << std::endl;
+                        std::cout << "!!!!!!!! Can't find feature id in feature map when marg newest !!!!!!!!!" << std::endl;
                         continue;
                     }
                     auto &&feature_node = feature_it->second;
-                    feature_node->imu_deque.pop_newest();
+                    auto &&vertex_landmark = feature_node->vertex_landmark;
+                    auto &&imu_deque = feature_node->imu_deque;
+
+                    // 移除feature的imu队列中的最新帧
+                    imu_deque.pop_newest();
+
+                    // TODO: 删除重投影edge与预积分edge
 
                     // 如果feature不在所有的imu中出现了，则需要删除feature
-                    if (feature_node->imu_deque.empty() && _imu_node->features.find(feature_id) == _imu_node->features.end()) {
-                        // TODO: 删除特征点
+                    if (feature_node->imu_deque.empty()
+                        && _imu_node->features_in_cameras.find(feature_id) == _imu_node->features_in_cameras.end()) {
+                        // 在problem中删除特征点
+                        _problem.remove_vertex(vertex_landmark);
+
+                        // 在map中删除特征点
                         _feature_map.erase(feature_id);
+
+                        // 释放特征点node的空间
                         delete feature_node;
                     }
                 }
+                // 释放imu node的空间
                 delete imu_newest;
-
-                // TODO: 删除重投影edge与预积分edge
             }
         }
 
+        // 把当前imu加入到windows中
+        _windows.push_newest(_imu_node);
+
         // 遍历当前imu的所有特征点，把该imu加入到特征点的队列中
-        for (auto &feature : _imu_node->features) {
-            auto &&feature_id = feature.first;
-            auto &&feature_node = _feature_map[feature_id];
+        for (auto &feature_in_cameras : _imu_node->features_in_cameras) {
+            auto &&feature_id = feature_in_cameras.first;
+            auto &&feature_it = _feature_map.find(feature_id);
+            if (feature_it == _feature_map.end()) {
+                std::cout << "!!!!!!! ERROR: feature of current imu not in feature map. !!!!!!!" << std::endl;
+                continue;
+            }
+            auto &&feature_node = feature_it->second;
             feature_node->imu_deque.push_newest(_imu_node);
         }
-
-        // 加入当前的imu
-        _windows.push_newest(_imu_node);
     }
-
-// real marginalization is removed in solve_ceres()
-    void Estimator::slideWindowNew()
-    {
-        sum_of_front++;
-        f_manager.removeFront(frame_count);
-    }
-// real marginalization is removed in solve_ceres()
-    void Estimator::slideWindowOld()
-    {
-        sum_of_back++;
-
-        bool shift_depth = solver_flag == NON_LINEAR ? true : false;
-        if (shift_depth)
-        {
-            Matrix3d R0, R1;
-            Vector3d P0, P1;
-            R0 = back_R0 * ric[0];
-            R1 = Rs[0] * ric[0];
-            P0 = back_P0 + back_R0 * tic[0];
-            P1 = Ps[0] + Rs[0] * tic[0];
-            f_manager.removeBackShiftDepth(R0, P0, R1, P1);
-        }
-        else
-            f_manager.removeBack();
-    }
-
 }
