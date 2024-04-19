@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(GraphOptimization)
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_BUILD_TYPE "Release")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
 include_directories("E:\\CLionProjects\\GraphOptimization\\lib\\eigen3")
 
@@ -17,5 +19,7 @@ target_link_libraries(backend so_plus tic_toc)
 
 target_link_libraries(fdsi backend so_plus tic_toc)
 
+target_link_libraries(vo_test backend so_plus tic_toc)
+
 add_executable(GraphOptimization main.cpp)
-target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc)
+target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc vo_test)

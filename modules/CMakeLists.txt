@@ -5,5 +5,6 @@
 #target_link_libraries(LM_src PRIVATE LM)
 
 add_subdirectory(fdsi)
+add_subdirectory(vo_test)
 #add_subdirectory(test_ba)
 #add_subdirectory(vins)

@@ -27,6 +27,7 @@ namespace graph_optimization {
         for (auto &edge : marginalized_edges) {
             auto vertices_edge = edge->vertices();
             for (auto &vertex : vertices_edge) {
+                if (vertex->is_ordering_id_invalid()) continue;
                 if (is_landmark_vertex(vertex)
                     && marginalized_landmark.find(vertex->id()) == marginalized_landmark.end()) {
                     // 修改landmark的ordering_id, 方便hessian的计算
@@ -51,6 +52,9 @@ namespace graph_optimization {
             assert(jacobians.size() == vertices.size());
             for (size_t i = 0; i < vertices.size(); ++i) {
                 auto v_i = vertices[i];
+                if (v_i->is_fixed()) continue;
+                if (v_i->is_ordering_id_invalid()) continue;
+
                 auto jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
@@ -62,6 +66,7 @@ namespace graph_optimization {
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
                     if (v_j->is_fixed()) continue;
+                    if (v_j->is_ordering_id_invalid()) continue;
 
                     auto &&jacobian_j = jacobians[j];
                     ulong index_j = v_j->ordering_id();
@@ -131,6 +136,9 @@ namespace graph_optimization {
         // 把需要marginalize的pose和motion的vertices移动到最下面
         ulong marginalized_state_dim = 0;
         auto move_vertex_to_bottom = [&](const std::shared_ptr<Vertex>& vertex) {
+            if (vertex->is_ordering_id_invalid()) {
+                return;
+            }
             ulong idx = vertex->ordering_id();
             ulong dim = vertex->local_dimension();
             marginalized_state_dim += dim;
@@ -159,6 +167,9 @@ namespace graph_optimization {
 
         // marginalize与边相连的所有pose和motion顶点
         auto marginalize_bottom_vertex = [&](const std::shared_ptr<Vertex> &vertex) {
+            if (vertex->is_ordering_id_invalid()) {
+                return;
+            }
             ulong marginalized_size = vertex->local_dimension();
             ulong reserve_size = state_dim - marginalized_size;
 //            MatXX Hrr = h_state_schur.block(0, 0, reserve_size, reserve_size);
@@ -251,7 +262,7 @@ namespace graph_optimization {
 
         // 由于叠加了lambda, 所以能够保证Hll可逆
         MatXX Hll = _hessian.block(reserve_size, reserve_size, marg_size, marg_size);
-        for (int i = 0; i < marg_size; ++i) {   // LM Method
+        for (ulong i = 0; i < marg_size; ++i) {   // LM Method
             // Hll(i, i) += _current_lambda;
             Hll(i, i) += _diag_lambda(i + reserve_size);
             if (Hll(i, i) < _diag_lambda(i + reserve_size)) {
@@ -390,7 +401,7 @@ namespace graph_optimization {
 
     bool ProblemSLAM::is_landmark_vertex(const std::shared_ptr<Vertex>& v) {
         string type = v->type_info();
-        return type == string("VertexPointXYZ") || type == string("VertexInverseDepth");
+        return type == string("VertexPoint3d") || type == string("VertexInverseDepth");
     }
 
     void ProblemSLAM::update_prior(const VecX &delta_x) {

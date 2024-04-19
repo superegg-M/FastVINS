@@ -12,6 +12,7 @@ namespace graph_optimization {
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
     public:
+        constexpr static unsigned long INVALID_ID = ~(unsigned long)0;
         /*!
          * 构造函数
          * @param num_dimension - 顶点自身维度
@@ -63,6 +64,8 @@ namespace graph_optimization {
         /// 测试该点是否被固定
         bool is_fixed() const { return _fixed; }
 
+        bool is_ordering_id_invalid() const { return _ordering_id == INVALID_ID; }
+
     protected:
         bool saved_parameters {false};
         VecX _parameters;   ///< 实际存储的变量值
@@ -73,7 +76,7 @@ namespace graph_optimization {
         /// ordering id是在problem中排序后的id，用于寻找雅可比对应块
         /// ordering id带有维度信息，例如ordering_id=6则对应Hessian中的第6列
         /// 从零开始
-        unsigned long _ordering_id = 0;
+        unsigned long _ordering_id {INVALID_ID};
 
         bool _fixed = false;    ///< 是否固定
 

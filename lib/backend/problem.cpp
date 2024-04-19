@@ -104,7 +104,7 @@ namespace graph_optimization {
                 flag = calculate_dog_leg(_delta_x_dl, iterations);
                 break;
             default:
-                flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
+                 flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
                 break;
         }
 
@@ -152,6 +152,10 @@ namespace graph_optimization {
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+                if (v_i->is_ordering_id_invalid()) {
+                    std::cout << v_i->type_info() << " with invalid ordering id!!!!" << std::endl;
+                    continue;
+                }
 
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
@@ -165,12 +169,16 @@ namespace graph_optimization {
                 for (size_t j = i; j < verticies.size(); ++j) {
                     auto &&v_j = verticies[j];
                     if (v_j->is_fixed()) continue;
+                    if (v_j->is_ordering_id_invalid()) {
+                        std::cout << v_j->type_info() << " with invalid ordering id!!!!" << std::endl;
+                        continue;
+                    }
 
                     auto &&jacobian_j = jacobians[j];
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-                    assert(v_j->ordering_id() != -1);
+//                    assert(v_j->ordering_id() != -1);
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
                     H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;

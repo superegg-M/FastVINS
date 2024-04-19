@@ -81,7 +81,6 @@ namespace graph_optimization {
                 }
 
                 double rho = nonlinear_gain / linear_gain;
-                std::cout << "rho = " << rho << std::endl;
                 if (rho > 0.) {
                     double alpha = 1. - pow((2 * rho - 1), 3);
                     alpha = std::min(alpha, 2. / 3.);
@@ -97,6 +96,7 @@ namespace graph_optimization {
 
                 if (rho > 0. && isfinite(new_chi2)) {    // last step was good, 误差在下降
                     is_good_step = true;
+                    failure_cnt = 0;
 
                     // 如果chi2的减少已经很少了, 则可以认为x已经在最优点, 所以无需在迭代
                     if (rho < eps) {
@@ -104,14 +104,14 @@ namespace graph_optimization {
                         std::cout << "Good: stop iteration due to (rho < eps)." << std::endl;
                         break;
                     }
-                    // chi2的变化率小于1e-3
+                    // chi2的变化率小于1e-6
                     if (fabs(new_chi2 - current_chi2) < 1e-3 * current_chi2) {
                         is_good_to_stop = true;
                         std::cout << "Good: stop iteration due to (fabs(new_chi2 - current_chi2) < 1e-3 * current_chi2)." << std::endl;
                         break;
                     }
                     // chi2小于最初的chi2一定的倍率
-                    if (current_chi2 < stop_threshold) {
+                    if (new_chi2 < stop_threshold) {
                         is_good_to_stop = true;
                         std::cout << "Good: stop iteration due to (current_chi2 < stop_threshold)." << std::endl;
                         break;
@@ -120,6 +120,7 @@ namespace graph_optimization {
                     current_chi2 = new_chi2;
                     update_jacobian();
                     update_hessian();
+                    delta_x.setZero();
                 } else {
                     is_good_step = false;
                     ++failure_cnt;

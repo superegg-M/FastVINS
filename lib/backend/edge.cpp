@@ -9,8 +9,7 @@
 namespace graph_optimization {
     unsigned long Edge::_global_edge_id = 0;
 
-    Edge::Edge(unsigned long residual_dimension, unsigned long num_vertices, const std::vector<std::string> &vertices_types,
-               LossFunction::Type loss_function_type) {
+    Edge::Edge(unsigned long residual_dimension, unsigned long num_vertices, const std::vector<std::string> &vertices_types, LossFunction::Type loss_function_type) {
         _residual.resize(residual_dimension, 1);
         _vertices.reserve(num_vertices);
         if (!vertices_types.empty()) {
@@ -44,14 +43,15 @@ namespace graph_optimization {
     }
 
     void Edge::robust_information(double &drho, MatXX &info) const {
-        VecX weight_error = _information * _residual;
+        VecX w_e = _information * _residual;
 
         MatXX robust_info(_information.rows(), _information.cols());
         robust_info.setIdentity();
         robust_info *= _rho[1] * _information;
         if(_rho[1] + 2 * _rho[2] * _chi2 > 0.) {
-            robust_info += 2 * _rho[2] * weight_error * weight_error.transpose();
+            robust_info += 2 * _rho[2] * w_e * w_e.transpose();
         }
+
         info = robust_info;
         drho = _rho[1];
     }
@@ -70,4 +70,3 @@ namespace graph_optimization {
         return true;
     }
 }
-
