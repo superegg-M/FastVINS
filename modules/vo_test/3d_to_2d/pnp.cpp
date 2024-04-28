@@ -40,9 +40,6 @@ namespace vins {
         imu_i->vertex_pose->set_parameters(pose);
 
         // 相机外参
-//        auto &&pose_ext = _vertex_ext[0]->get_parameters();
-//        Vec3 t_ic {pose_ext(0), pose_ext(1), pose_ext(2)};
-//        Qd q_ic {pose_ext(6), pose_ext(3), pose_ext(4), pose_ext(5)};
         Vec3 t_ic = _t_ic[0];
         Qd q_ic = _q_ic[0];
 

@@ -49,7 +49,10 @@ namespace vins {
         void process_image(const unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> &image, double header);
 
         // internal
+        bool search_relative_pose(Mat33 &r, Vec3 &t, unsigned long &imu_index);
+        bool structure_from_motion();
         bool initial_structure();
+
         void global_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce=false);
         void local_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce=false);
         void global_triangulate_between(unsigned long i, unsigned long j, bool enforce=false);
@@ -70,10 +73,9 @@ namespace vins {
         bool compute_essential_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
         bool compute_homography_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
 
-        bool structure_from_motion();
         bool visual_initial_align();
         bool visual_align_to_imu();
-        bool relative_pose(Mat33 &r, Vec3 &t, unsigned long &imu_index);
+
         void slide_window();
         void solve_odometry();
         void slide_window_new();
@@ -88,7 +90,6 @@ namespace vins {
         void vector2double();
         void double2vector();
         bool failure_detection();
-
 
         enum SolverFlag {
             INITIAL,
