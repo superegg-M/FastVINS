@@ -8,7 +8,7 @@
 //#include <lib/backend/edge.h>
 #include <utility>
 #include "backend/edge.h"
-#include "imu_integration.h"
+#include "../imu_integration.h"
 
 namespace graph_optimization {
     class EdgeImu : public Edge {

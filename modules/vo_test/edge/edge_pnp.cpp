@@ -3,7 +3,7 @@
 //
 
 #include "edge_pnp.h"
-#include "vertex_pose.h"
+#include "../vertex/vertex_pose.h"
 
 void graph_optimization::EdgePnP::compute_residual() {
     // imu的位姿

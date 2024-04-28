@@ -7,7 +7,7 @@
 #include <utility>
 
 namespace vins {
-    Vec3 IMUIntegration::_gravity = {0., 0., 9.8};
+    Vec3 IMUIntegration::_gravity = {0., 0., -9.8};
 
     IMUIntegration::IMUIntegration(const Vec3 &acc_init, const Vec3 &gyro_init, const Vec3 &ba, const Vec3 &bg)
             : _acc_init(acc_init), _gyro_init(gyro_init), _acc_last(acc_init), _gyro_last(gyro_init), _ba(ba), _bg(bg) {

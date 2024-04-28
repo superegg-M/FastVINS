@@ -24,17 +24,17 @@
 //#include <opencv2/core/eigen.hpp>
 
 #include "imu_integration.h"
-#include "edge_imu.h"
-#include "edge_reprojection.h"
-#include "edge_pnp.h"
-#include "edge_pnp_sim3.h"
-#include "edge_epipolar.h"
-#include "vertex_inverse_depth.h"
-#include "vertex_pose.h"
-#include "vertex_motion.h"
-#include "vertex_scale.h"
-#include "vertex_quaternion.h"
-#include "vertex_spherical.h"
+#include "edge/edge_imu.h"
+#include "edge/edge_reprojection.h"
+#include "edge/edge_pnp.h"
+#include "edge/edge_pnp_sim3.h"
+#include "edge/edge_epipolar.h"
+#include "vertex/vertex_inverse_depth.h"
+#include "vertex/vertex_pose.h"
+#include "vertex/vertex_motion.h"
+#include "vertex/vertex_scale.h"
+#include "vertex/vertex_quaternion.h"
+#include "vertex/vertex_spherical.h"
 
 namespace vins {
     using namespace graph_optimization;
@@ -58,11 +58,21 @@ namespace vins {
         void local_triangulate_feature(FeatureNode* feature, bool enforce=false);
         void global_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
         void local_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
+
+        // 3D-2D
         void pnp(ImuNode *imu_i, Qd *q_wi_init=nullptr, Vec3 *t_wi_init=nullptr);
         void epnp(ImuNode *imu_i);
+        void mlpnp(ImuNode *imu_i, unsigned int batch_size=36, unsigned int num_batches=30);
+        void dltpnp(ImuNode *imu_i, unsigned int batch_size=36, unsigned int num_batches=30);
+        bool iter_pnp(ImuNode *imu_i, Qd *q_wi_init=nullptr, Vec3 *t_wi_init=nullptr);
+
+        // 2D-2D
         bool compute_essential_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
+        bool compute_homography_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
+
         bool structure_from_motion();
         bool visual_initial_align();
+        bool visual_align_to_imu();
         bool relative_pose(Mat33 &r, Vec3 &t, unsigned long &imu_index);
         void slide_window();
         void solve_odometry();

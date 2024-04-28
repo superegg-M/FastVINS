@@ -9,12 +9,12 @@
 #include <unordered_map>
 #include "parameters.h"
 #include "imu_integration.h"
-#include "edge_imu.h"
-#include "edge_reprojection.h"
-#include "vertex_inverse_depth.h"
-#include "vertex_point3d.h"
-#include "vertex_pose.h"
-#include "vertex_motion.h"
+#include "edge/edge_imu.h"
+#include "edge/edge_reprojection.h"
+#include "vertex/vertex_inverse_depth.h"
+#include "vertex/vertex_point3d.h"
+#include "vertex/vertex_pose.h"
+#include "vertex/vertex_motion.h"
 
 namespace vins {
     using namespace std;

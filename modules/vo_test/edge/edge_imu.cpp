@@ -3,8 +3,8 @@
 //
 
 #include "edge_imu.h"
-#include "vertex_pose.h"
-#include "vertex_motion.h"
+#include "../vertex/vertex_pose.h"
+#include "../vertex/vertex_motion.h"
 
 namespace graph_optimization {
     EdgeImu::EdgeImu(const vins::IMUIntegration &imu_integration)

@@ -3,10 +3,10 @@
 //
 
 #include "edge_epipolar.h"
-#include "vertex_quaternion.h"
-#include "vertex_spherical.h"
-#include "vertex_scale.h"
-#include "vertex_scale.h"
+#include "../vertex/vertex_quaternion.h"
+#include "../vertex/vertex_spherical.h"
+#include "../vertex/vertex_scale.h"
+#include "../vertex/vertex_scale.h"
 
 void graph_optimization::EdgeEpipolar::compute_residual() {
     // 姿态

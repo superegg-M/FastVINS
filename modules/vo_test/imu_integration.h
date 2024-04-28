@@ -149,13 +149,13 @@ namespace vins {
         Vec6 _noise_random_walk = Vec6::Identity();
 
         /**@brief accelerometer measurement noise standard deviation*/
-        constexpr static double _acc_noise = 0.2;
+        constexpr static double _acc_noise = 0.08;
         /**@brief gyroscope measurement noise standard deviation*/
-        constexpr static double _gyro_noise = 0.02;
+        constexpr static double _gyro_noise = 0.004;
         /**@brief accelerometer bias random walk noise standard deviation*/
-        constexpr static double _acc_random_walk = 0.0002;
+        constexpr static double _acc_random_walk = 0.00004;
         /**@brief gyroscope bias random walk noise standard deviation*/
-        constexpr static double _gyro_random_walk = 2.0e-5;
+        constexpr static double _gyro_random_walk = 2.0e-6;
     };
 }
 

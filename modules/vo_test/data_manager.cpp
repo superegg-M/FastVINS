@@ -4,6 +4,8 @@
 
 #include "data_manager.h"
 
+#include <memory>
+
 namespace vins {
     ImuNode::ImuNode(IMUIntegration *imu_integration_pt, unsigned int num_cameras)
     : imu_integration(imu_integration_pt), features_in_cameras(2 * num_cameras) {
@@ -26,7 +28,7 @@ namespace vins {
     void FeatureNode::from_global_to_local(const std::vector<Qd> &q_ic, const vector<Vec3> &t_ic) {
         if (vertex_point3d) {
             if (!vertex_landmark) {
-                vertex_landmark = shared_ptr<VertexInverseDepth>(new VertexInverseDepth);
+                vertex_landmark = std::make_shared<VertexInverseDepth>();
             }
 
             // 获取基准imu的信息

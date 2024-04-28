@@ -12,6 +12,8 @@
 
 #define MULTIPLY_HESSIAN_USING_SELF_ADJOINT
 
+//#define USE_PCG_SOLVER
+
 using namespace std;
 
 namespace graph_optimization {
@@ -191,6 +193,7 @@ namespace graph_optimization {
             }
 
         }
+
         _hessian = H;
         _b = b;
 
@@ -295,6 +298,11 @@ namespace graph_optimization {
 //                H(i, i) += _current_lambda;
 //            }
         H += _diag_lambda.asDiagonal();
+#ifdef USE_PCG_SOLVER
+        auto n_pcg = H.rows();                       // 迭代次数
+        delta_x = PCG_solver(H, _b, n_pcg);
+        return true;
+#else
         auto && H_ldlt = H.ldlt();
         if (H_ldlt.info() == Eigen::Success) {
             delta_x = H_ldlt.solve(_b);
@@ -302,6 +310,7 @@ namespace graph_optimization {
         } else {
             return false;
         }
+#endif
     }
 
     void Problem::update_states(const VecX &delta_x) {

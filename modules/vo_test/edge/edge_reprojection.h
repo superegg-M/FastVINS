@@ -36,6 +36,29 @@ namespace graph_optimization {
         Vec3 _pt_i, _pt_j;
     };
 
+    class EdgeReprojectionLocal : public Edge {
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+        explicit EdgeReprojectionLocal(Vec3 pt_i, Vec3 pt_j);
+
+        /// 返回边的类型信息
+        std::string type_info() const override { return "EdgeReprojectionLocal"; }
+
+        /// 计算残差
+        void compute_residual() override;
+
+        /// 计算雅可比
+        void compute_jacobians() override;
+
+        void set_translation_imu_from_camera(Eigen::Quaterniond &qic, Vec3 &tic) { _qic = qic; _tic = tic; }
+
+    private:
+        Qd _qic;
+        Vec3 _tic;
+        Vec3 _pt_i, _pt_j;
+        Mat23 _Nj;
+    };
+
 
     class EdgeReprojectionPoint3d : public Edge {
     public:
