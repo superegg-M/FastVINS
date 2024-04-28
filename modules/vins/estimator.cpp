@@ -1211,7 +1211,7 @@ namespace vins {
 
                 if (average_parallax * 460 > 30 && m_estimator.solveRelativeRT(corres, r, t)) {
                     imu_index = i;
-                    //ROS_DEBUG("average_parallax %f choose l %d and newest frame to triangulate the whole structure", average_parallax * 460, l);
+                    //ROS_DEBUG("average_parallax %f choose l %d and newest frame to 2d_to_3d the whole structure", average_parallax * 460, l);
                     return true;
                 }
             }

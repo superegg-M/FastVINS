@@ -19,8 +19,8 @@ add_library(vo_test
         2d_to_2d/essential.cpp
         2d_to_2d/homography.cpp
 
-        triangulate/local_triangulate.cpp
-        triangulate/global_triangulate.cpp
+        2d_to_3d/local_triangulate.cpp
+        2d_to_3d/global_triangulate.cpp
 
         3d_to_2d/pnp.cpp
         3d_to_2d/dlt_pnp.cpp

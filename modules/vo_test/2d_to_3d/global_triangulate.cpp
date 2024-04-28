@@ -128,7 +128,7 @@ namespace vins {
             }
         }
 
-        std::cout << "global triangulate takes " << tri_t.toc() << " ms" << std::endl;
+        std::cout << "global 2d_to_3d takes " << tri_t.toc() << " ms" << std::endl;
     }
 
 
@@ -221,6 +221,6 @@ namespace vins {
         Vec3 point {svd_V[0] / svd_V[3], svd_V[1] / svd_V[3], svd_V[2] / svd_V[3]};
         feature->vertex_point3d->set_parameters(point);
 
-        std::cout << "global triangulate takes " << tri_t.toc() << " ms" << std::endl;
+        std::cout << "global 2d_to_3d takes " << tri_t.toc() << " ms" << std::endl;
     }
 }
