@@ -559,9 +559,9 @@ int main() {
     static ImuAlignTest imu_align(0.005);
     imu_align.generate_data(201);
 
-    Vec3 ba_init {};
-    Vec3 bg_init {};
-    double scale = 100.;
+    Vec3 ba_init {0., 0., 0.};
+    Vec3 bg_init {0., 0., 0.};
+    double scale = 10.;
     Qd q0 {cos(0.5 * 0.2), sin(0.5 * 0.2), 0., 0.};
 
     vector<Vec3> t;
@@ -596,6 +596,8 @@ int main() {
     Eigen::Matrix<double, 37, 1> b;
     for (unsigned int i = 0; i < 201; ++i) {
         if (imu_integration) {
+//            std::cout << "1: " << imu_integration->get_delta_p().transpose() << std::endl;
+//            std::cout << "2: " << imu_integration->get_delta_v().transpose() << std::endl;
             imu_integration->push_back(imu_align._dt, imu_align._a_buff[i], imu_align._w_buff[i]);
         }
 
@@ -704,10 +706,10 @@ int main() {
     }
 
     // 非线性
-    problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
+    problem.set_solver_type(graph_optimization::Problem::SolverType::LBFGS);
     vertex_ba->set_fixed();
     vertex_bg->set_fixed();
-    problem.solve(15);
+    problem.solve(100);
     std::cout << "nonlinear scale: " << vertex_scale->get_parameters().transpose() << std::endl;
     std::cout << "nonlinear q_wb0: " << vertex_q_wb0->get_parameters().transpose() << std::endl;
     std::cout << "nonlinear ba: " << vertex_ba->get_parameters().transpose() << std::endl;
