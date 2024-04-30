@@ -13,7 +13,9 @@ namespace graph_optimization {
     class VertexPose : public Vertex {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-        VertexPose() : Vertex(7, 6) {}
+        VertexPose() : Vertex(7, 6) {
+            _parameters[6] = 1.;
+        }
 
         void plus(const VecX &delta) override;
 

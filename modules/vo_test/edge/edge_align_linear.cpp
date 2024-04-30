@@ -29,6 +29,14 @@ namespace graph_optimization {
 
         _residual /= dt;
 
+//        std::cout << "scale: " << scale << std::endl;
+//        std::cout << "g_b0: " << g_b0.transpose() << std::endl;
+//        std::cout << "v_i: " << v_i.transpose() << std::endl;
+//        std::cout << "v_j: " << v_j.transpose() << std::endl;
+//        std::cout << "dt: " << dt << std::endl;
+//        std::cout << "delta_v: " << _imu_integration.get_delta_v().transpose() << std::endl;
+//        std::cout << "delta_p: " << _imu_integration.get_delta_p().transpose() << std::endl;
+
 //        std::cout << "_residual.head<3>() = " << _residual.head<3>().transpose() << std::endl;
 //        std::cout << "_imu_integration.get_delta_p() = " << _imu_integration.get_delta_p().transpose() << std::endl;
 //        std::cout << "_residual.tail<3>() = " << _residual.tail<3>().transpose() << std::endl;

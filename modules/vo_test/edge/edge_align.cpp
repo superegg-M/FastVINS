@@ -25,12 +25,12 @@ namespace graph_optimization {
         Vec3 bg = _vertices[5]->get_parameters();
 
         double dt = _imu_integration.get_sum_dt();
-        Vec3 g_b0 = q_wb0.inverse() * _imu_integration.get_gravity();
+        Vec3 g_b0 = q_wb0.inverse() * vins::IMUIntegration::get_gravity();
 
         // (e_p, e_r, e_v)
         _residual.head<3>() = _q_0i.inverse() * (scale * _t_ij - (scale * v_i + 0.5 * dt * g_b0) * dt) - _imu_integration.get_delta_p();
         _residual.segment<3>(3) = 2. * (_imu_integration.get_delta_q().inverse() * _q_ij).vec();
-        _residual.tail<3>() = _q_0i.inverse() * (scale * v_j - (scale * v_i + g_b0 * dt)) - _imu_integration.get_delta_v();
+        _residual.tail<3>() = _q_0i.inverse() * (scale * (v_j - v_i) - (g_b0 * dt)) - _imu_integration.get_delta_v();
 
         _residual /= dt;
 
@@ -48,7 +48,7 @@ namespace graph_optimization {
         Vec3 bg = _vertices[5]->get_parameters();
 
         double dt = _imu_integration.get_sum_dt();
-        Vec3 g_b0 = q_wb0.inverse() * _imu_integration.get_gravity();
+        Vec3 g_b0 = q_wb0.inverse() * vins::IMUIntegration::get_gravity();
         Vec3 dg_b0 = g_b0 * dt;
         Mat33 R_0i_T = _q_0i.toRotationMatrix().transpose();
 

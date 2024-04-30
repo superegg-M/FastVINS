@@ -12,7 +12,9 @@ namespace graph_optimization {
     class VertexInverseDepth : public Vertex {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-        VertexInverseDepth() : Vertex(1) {}
+        VertexInverseDepth() : Vertex(1) {
+            _parameters[0] = 1.;
+        }
 
         std::string type_info() const override { return "VertexInverseDepth"; }
     };
