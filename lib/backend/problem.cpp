@@ -105,8 +105,11 @@ namespace graph_optimization {
             case SolverType::DOG_LEG:
                 flag = calculate_dog_leg(_delta_x_dl, iterations);
                 break;
+            case SolverType::LBFGS:
+                flag = calculate_lbfgs(_delta_x_lbfgs, iterations);
+                break;
             default:
-                 flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
+                flag = calculate_levenberg_marquardt(_delta_x_lm, iterations);
                 break;
         }
 
@@ -129,6 +132,50 @@ namespace graph_optimization {
             vertex.second->set_ordering_id(_ordering_generic);
             _ordering_generic += vertex.second->local_dimension();  // 所有的优化变量总维数
         }
+    }
+
+    void Problem::update_gradient() {
+        TicToc t_h;
+
+        ulong size = _ordering_generic;
+        VecX g(VecX::Zero(size));
+
+        // TODO:: accelate, accelate, accelate
+//#ifdef USE_OPENMP
+//#pragma omp parallel for
+//#endif
+
+        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
+        for (auto &edge: _edges) {
+//            edge.second->compute_residual();
+//            edge.second->compute_jacobians();
+
+            auto &&jacobians = edge.second->jacobians();
+            auto &&verticies = edge.second->vertices();
+            assert(jacobians.size() == verticies.size());
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+                if (v_i->is_ordering_id_invalid()) {
+                    std::cout << v_i->type_info() << " with invalid ordering id!!!!" << std::endl;
+                    continue;
+                }
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                double drho;
+                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
+                edge.second->robust_information(drho, robust_information);
+
+                g.segment(index_i, dim_i).noalias() += drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
+            }
+        }
+
+        _gradient = g;
+
+        _t_hessian_cost += t_h.toc();
     }
 
     void Problem::update_hessian() {

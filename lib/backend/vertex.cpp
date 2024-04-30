@@ -9,6 +9,7 @@ namespace graph_optimization {
 
     Vertex::Vertex(unsigned long num_dimension, unsigned long local_dimension) {
         _parameters.resize(num_dimension, 1);
+        _parameters.setZero();
         _local_dimension = local_dimension ? local_dimension : num_dimension;
         _id = _global_vertex_id++;
     }

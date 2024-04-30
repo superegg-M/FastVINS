@@ -20,7 +20,8 @@ namespace graph_optimization {
             STEEPEST_DESCENT,
             GAUSS_NEWTON,
             LEVENBERG_MARQUARDT,
-            DOG_LEG
+            DOG_LEG,
+            LBFGS
         };
         typedef unsigned long ulong;
 //    typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
@@ -67,6 +68,7 @@ namespace graph_optimization {
         void update_residual(); ///< 计算每条边的残差;      运行顺序必须遵循: update_state -> update_residual
         void update_jacobian(); ///< 计算每条边的残差;      运行顺序必须遵循: update_residual -> update_jacobian
         void update_chi2(); ///< 计算综合的chi2;           运行顺序必须遵循: update_residual -> update_chi2
+        void update_gradient();
         void update_hessian();    ///< 计算H, b, J, f;    运行顺序必须遵循: update_jacobian -> update_hessian
         virtual void add_prior_to_hessian();    ///< H = H + H_prior;   在make_hessian()时会运行
         void initialize_lambda();   ///< 计算λ;   运行顺序必须遵循: update_hessian -> initialize_lambda
@@ -79,6 +81,8 @@ namespace graph_optimization {
         bool calculate_gauss_newton(VecX &delta_x, unsigned long iterations=10);
         bool calculate_levenberg_marquardt(VecX &delta_x, unsigned long iterations=10);
         bool calculate_dog_leg(VecX &delta_x, unsigned long iterations=10);
+        bool calculate_lbfgs(VecX &delta_x, unsigned long iterations=10);
+
 
         /// 计算并更新Prior部分
         void compute_prior();
@@ -104,6 +108,7 @@ namespace graph_optimization {
         ulong _ordering_generic = 0;
         double _chi2 {0.};
 
+        VecX _gradient;
         MatXX _hessian;
         VecX _b;
         VecX _hessian_diag;
@@ -112,6 +117,7 @@ namespace graph_optimization {
         VecX _delta_x_gn;
         VecX _delta_x_lm;
         VecX _delta_x_dl;
+        VecX _delta_x_lbfgs;
 
         MatXX _h_prior;
         VecX _b_prior;

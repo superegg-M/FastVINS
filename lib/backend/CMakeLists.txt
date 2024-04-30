@@ -7,6 +7,7 @@ add_library(backend
         gauss_newton.cpp
         levenberg_marquardt.cpp
         dog_leg.cpp
+        lbfgs.cpp
         loss_function.cpp
         problem_slam.cpp)
 
