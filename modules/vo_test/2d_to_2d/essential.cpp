@@ -142,7 +142,7 @@ namespace vins {
         Mat33 best_E;
         double best_score = 0.;
         unsigned int best_iter = 0;
-        unsigned long num_outliners = 0;
+        unsigned long num_outliers = 0;
         vector<bool> is_outliers(num_points, false);
         for (unsigned int n = 0; n < max_iters; ++n) {
             // 八点法算E
@@ -213,7 +213,7 @@ namespace vins {
 
                 is_outliers[k] = is_outlier;
                 if (is_outlier) {
-                    ++num_outliners;
+                    ++num_outliers;
                 }
             }
 
@@ -224,8 +224,8 @@ namespace vins {
             }
         }
 
-        // outliner的点过多
-        if (10 * num_outliners > 5 * num_points) {
+        // outlier的点过多
+        if (10 * num_outliers > 5 * num_points) {
             return false;
         }
 
@@ -263,6 +263,8 @@ namespace vins {
             A.row(3) = R.col(1).transpose() - point_j->y() * R.col(2).transpose();
             Vec4 b;
             b << 0., 0., RTt[0] - RTt[2] * point_j->x(), RTt[1] - RTt[2] * point_j->y();
+
+            // TODO: 使用QR分解求解最小二乘问题，这样数值精度更加稳定
             Mat33 ATA = A.transpose() * A;
             Vec3 ATb = A.transpose() * b;
             auto &&ATA_ldlt = ATA.ldlt();
@@ -315,14 +317,14 @@ namespace vins {
         succeed_points[3] = tri_all_points(R2, t2, points_w[3]);
 
         unsigned long max_succeed_points = max(succeed_points[0], max(succeed_points[1], max(succeed_points[2], succeed_points[3])));
-        unsigned long min_succeed_points = 9 * (num_points - num_outliners) / 10; // 至少要超过90%的点成功被三角化
+        unsigned long min_succeed_points = 9 * (num_points - num_outliers) / 10; // 至少要超过90%的点成功被三角化
 
         if (max_succeed_points < min_succeed_points) {
             return false;
         }
 
         unsigned long lim_succeed_points = 7 * max_succeed_points / 10;
-        unsigned long num_similar = 0;  // 不允许超过1组解使得70%的点都能三角化
+        unsigned long num_similar = 0;  // 记录有多少组解使得70%的点都能三角化
         if (succeed_points[0] > lim_succeed_points) {
             ++num_similar;
         }
@@ -335,7 +337,7 @@ namespace vins {
         if (succeed_points[3] > lim_succeed_points) {
             ++num_similar;
         }
-        if (num_similar > 1) {
+        if (num_similar > 1) {  // 不允许超过1组解使得70%的点都能三角化
             return false;
         }
 
@@ -370,7 +372,7 @@ namespace vins {
         // 把三角化的结果赋值给landmark
         if (is_init_landmark) {
             for (unsigned long k = 0; k < num_points; ++k) {
-                // 没有outliners以及深度为正的点才会进行赋值
+                // 没有outliers以及深度为正的点才会进行赋值
                 if (!is_outliers[k] && points_w[which_case][k].first) {
                     auto &&feature_it = _feature_map.find(feature_ids[k]);
                     if (feature_it == _feature_map.end()) {
