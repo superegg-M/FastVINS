@@ -37,7 +37,7 @@ namespace graph_optimization {
         Eigen::MatrixXd lm_y = Eigen::MatrixXd::Zero(n, m);
         Eigen::VectorXd lm_ys = Eigen::VectorXd::Zero(m);
 
-        // 初始化
+        /* 初始化误差与梯度 */
         update_residual();
         update_chi2();
         update_jacobian();
@@ -47,7 +47,7 @@ namespace graph_optimization {
         pf[0] = f;
         std::cout << "init: " << " , get_chi2 = " << f << std::endl;
 
-        // 初始的下降方向
+        /* 初始的下降方向 */
         VecX d = -_gradient;
 
         double gnorm_inf = _gradient.cwiseAbs().maxCoeff();
@@ -55,7 +55,7 @@ namespace graph_optimization {
             return true;
         }
 
-        // 初始步长
+        /* 初始步长 */
         double step = 1. / d.norm();
 
         VecX gp;
