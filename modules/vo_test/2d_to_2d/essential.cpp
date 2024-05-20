@@ -143,7 +143,7 @@ namespace vins {
         double best_score = 0.;
         unsigned int best_iter = 0;
         unsigned long num_outliners = 0;
-        vector<bool> is_outliners(num_points, false);
+        vector<bool> is_outliers(num_points, false);
         for (unsigned int n = 0; n < max_iters; ++n) {
             // 八点法算E
             Mat89 D;
@@ -180,9 +180,9 @@ namespace vins {
                     e20 = E(2, 0), e21 = E(2, 1), e22 = E(2, 2);
 
             // 计算分数
-            ;        double score = 0.;
+            double score = 0.;
             for (unsigned long k = 0; k < num_points; ++k) {
-                bool is_outliner = false;
+                bool is_outlier = false;
 
                 double u1 = normal_match_pairs[k].first.x();
                 double v1 = normal_match_pairs[k].first.y();
@@ -195,7 +195,7 @@ namespace vins {
                 double num = a * u2 + b * v2 + c;
                 double e2 = num * num / (a * a + b * b);
                 if (e2 > th_e2) {
-                    is_outliner = true;
+                    is_outlier = true;
                 } else {
                     score += th_score - e2;
                 }
@@ -206,13 +206,13 @@ namespace vins {
                 num = u1 * a + v1 * b + c;
                 e2 = num * num / (a * a + b * b);
                 if (e2 > th_e2) {
-                    is_outliner = true;
+                    is_outlier = true;
                 } else {
                     score += th_score - e2;
                 }
 
-                is_outliners[k] = is_outliner;
-                if (is_outliner) {
+                is_outliers[k] = is_outlier;
+                if (is_outlier) {
                     ++num_outliners;
                 }
             }
@@ -277,7 +277,7 @@ namespace vins {
         auto tri_all_points = [&](const Mat33 &R, const Vec3 &t, vector<pair<bool, Vec3>> &points) -> unsigned long {
             unsigned long succeed_count = 0;
             for (unsigned long k = 0; k < num_points; ++k) {
-                if (is_outliners[k]) {
+                if (is_outliers[k]) {
                     continue;
                 }
 
@@ -371,7 +371,7 @@ namespace vins {
         if (is_init_landmark) {
             for (unsigned long k = 0; k < num_points; ++k) {
                 // 没有outliners以及深度为正的点才会进行赋值
-                if (!is_outliners[k] && points_w[which_case][k].first) {
+                if (!is_outliers[k] && points_w[which_case][k].first) {
                     auto &&feature_it = _feature_map.find(feature_ids[k]);
                     if (feature_it == _feature_map.end()) {
                         continue;
