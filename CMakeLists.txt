@@ -21,5 +21,8 @@ target_link_libraries(fdsi backend so_plus tic_toc)
 
 target_link_libraries(vo_test backend so_plus tic_toc)
 
-add_executable(GraphOptimization main.cpp)
+#add_executable(GraphOptimization main.cpp)
+#add_executable(GraphOptimization app/system_identification.cpp)
+#add_executable(GraphOptimization app/vo_test.cpp)
+add_executable(GraphOptimization app/vio_inertial_init.cpp)
 target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc vo_test)
