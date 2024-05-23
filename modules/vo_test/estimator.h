@@ -48,19 +48,27 @@ namespace vins {
 
         void process_image(const unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> &image, double header);
 
-        // internal
+        // initialize
+        bool initialize();
+
+        // visual initialize
         bool search_relative_pose(Mat33 &r, Vec3 &t, unsigned long &imu_index);
         bool structure_from_motion();
-        bool initial_structure();
 
+        // inertial initialize
+        bool align_visual_to_imu();
+
+        // 2D-2D
+        bool compute_essential_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
+        bool compute_homography_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
+
+        // 2D-3D
         void global_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce=false);
         void local_triangulate_with(ImuNode *imu_i, ImuNode *imu_j, bool enforce=false);
         void global_triangulate_between(unsigned long i, unsigned long j, bool enforce=false);
         void local_triangulate_between(unsigned long i, unsigned long j, bool enforce=false);
         void global_triangulate_feature(FeatureNode* feature, bool enforce=false);
         void local_triangulate_feature(FeatureNode* feature, bool enforce=false);
-        void global_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
-        void local_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
 
         // 3D-2D
         void pnp(ImuNode *imu_i, Qd *q_wi_init=nullptr, Vec3 *t_wi_init=nullptr);
@@ -69,12 +77,9 @@ namespace vins {
         void dltpnp(ImuNode *imu_i, unsigned int batch_size=36, unsigned int num_batches=30);
         bool iter_pnp(ImuNode *imu_i, Qd *q_wi_init=nullptr, Vec3 *t_wi_init=nullptr);
 
-        // 2D-2D
-        bool compute_essential_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
-        bool compute_homography_matrix(Mat33 &R, Vec3 &t, ImuNode *imu_i, ImuNode *imu_j, bool is_init_landmark=true, unsigned int max_iters=30);
-
-        bool visual_initial_align();
-        bool visual_align_to_imu();
+        // bundle adjustment
+        void global_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
+        void local_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
 
         void slide_window();
         void solve_odometry();

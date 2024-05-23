@@ -28,8 +28,14 @@ add_library(vo_test
         3d_to_2d/e_pnp.cpp
         3d_to_2d/iter_pnp.cpp
 
+        bundle_adjustment/global_bundle_adjustment.cpp
+        bundle_adjustment/local_bundle_adjustment.cpp
+
         initialize/visual_initialize.cpp
         initialize/inertial_initialize.cpp
+
+        data_process/image_process.cpp
+        data_process/imu_process.cpp
 
         imu_integration.cpp
         data_manager.cpp

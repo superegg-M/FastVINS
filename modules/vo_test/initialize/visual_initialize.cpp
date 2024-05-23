@@ -165,6 +165,15 @@ namespace vins {
 //        // Local Bundle Adjustment
 //        local_bundle_adjustment(&fixed_poses);
 
+        for (unsigned long i = 0; i < _windows.size(); ++i) {
+            auto &&pose = _windows[i]->vertex_pose->get_parameters();
+            Vec3 t {pose(0), pose(1), pose(2)};
+            Qd q {pose(6), pose(3), pose(4), pose(5)};
+            std::cout << "i = " << i << ":" << std::endl;
+            std::cout << "t = " << t.transpose() << std::endl;
+            std::cout << "q = " << q.toRotationMatrix() << std::endl;
+        }
+
         return true;
     }
 
