@@ -237,8 +237,8 @@ int main() {
 
     // 非线性
     problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
-    vertex_ba->set_fixed();
-    vertex_bg->set_fixed();
+//    vertex_ba->set_fixed();
+//    vertex_bg->set_fixed();
     problem.solve(30);
     std::cout << "nonlinear scale: " << vertex_scale->get_parameters().transpose() << std::endl;
     std::cout << "nonlinear q_wb0: " << vertex_q_wb0->get_parameters().transpose() << std::endl;
