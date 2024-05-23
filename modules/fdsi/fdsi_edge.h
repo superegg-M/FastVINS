@@ -229,7 +229,7 @@ namespace system_identification {
 
         template<unsigned NP,unsigned NZ,unsigned NI>
         double FDSIEdge<NP, NZ, NI>::get_Td() const {
-            return _vertices[0]->parameters()(NP + NZ + 1);
+            return _vertices[0]->get_parameters()(NP + NZ + 1);
         }
 
         template<unsigned NP,unsigned NZ,unsigned NI>

@@ -22,6 +22,11 @@ namespace system_identification {
 
             FDSIVertex(): Vertex(NP + NZ + 2) {}
             std::string type_info() const override { return "FDSI"; }
+
+//            void plus(const graph_optimization::VecX &delta) override {
+//                _parameters.topRows<NP + NZ + 1>() += delta.topRows<NP + NZ + 1>();
+//                _parameters[NP + NZ + 1] *= exp(delta[NP + NZ + 1]);
+//            }
         };
     }
 }

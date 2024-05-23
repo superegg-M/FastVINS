@@ -60,6 +60,7 @@ namespace system_identification {
 
             std::cout<<"\nTest CurveFitting start..."<<std::endl;
             /// 使用 LM 求解
+            problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
             problem.solve(30);
 
             std::cout << "-------After optimization, we got these parameters :" << std::endl;
