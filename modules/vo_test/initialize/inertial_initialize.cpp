@@ -23,7 +23,7 @@ namespace vins {
         }
 
         // 线性与非线性问题的公共顶点
-        shared_ptr<VertexVelocity> vertex_v[_windows.size()];   // 速度
+        shared_ptr<VertexVelocity> vertex_v[_windows.size() + 1];   // 速度
         for (auto &v : vertex_v) {
             v = make_shared<VertexVelocity>();
             v->parameters().setZero();
@@ -64,6 +64,7 @@ namespace vins {
         nonlinear_problem.add_vertex(vertex_bg);
         nonlinear_problem.add_vertex(vertex_v[0]);
 
+        // 遍历windows
         for (unsigned long i = 1; i < _windows.size(); ++i) {
             // 提取位姿
             auto &&pose_i = _windows[i - 1]->vertex_pose->get_parameters();
@@ -108,6 +109,53 @@ namespace vins {
             // 加入到problem
             nonlinear_problem.add_edge(nonlinear_edge);
             nonlinear_problem.add_vertex(vertex_v[i]);
+        }
+
+        // 当前imu
+        {
+            // 提取位姿
+            auto &&pose_i = _windows.newest()->vertex_pose->get_parameters();
+            auto &&pose_j = _imu_node->vertex_pose->get_parameters();
+
+            Vec3 p_i {pose_i(0), pose_i(1), pose_i(2)};
+            Qd q_i {pose_i(6), pose_i(3), pose_i(4), pose_i(5)};
+
+            Vec3 p_j {pose_j(0), pose_j(1), pose_j(2)};
+            Qd q_j {pose_j(6), pose_j(3), pose_j(4), pose_j(5)};
+
+            Vec3 tij = p_j - p_i;
+            Qd qij = (q_i.inverse() * q_j).normalized();
+
+            /* 线性问题的边 */
+            shared_ptr<EdgeAlignLinear> linear_edge = make_shared<EdgeAlignLinear>(*_imu_node->imu_integration,
+                                                                                   tij,
+                                                                                   qij,
+                                                                                   q_i);
+            linear_edge->set_loss_function(trivial_loss);
+            linear_edge->add_vertex(vertex_linear_scale);
+            linear_edge->add_vertex(vertex_g_b0);
+            linear_edge->add_vertex(vertex_v[_windows.size() - 1]);
+            linear_edge->add_vertex(vertex_v[_windows.size()]);
+
+            // 加入到problem
+            linear_problem.add_edge(linear_edge);
+            linear_problem.add_vertex(vertex_v[_windows.size()]);
+
+            /* 非线性问题的边 */
+            shared_ptr<EdgeAlign> nonlinear_edge = make_shared<EdgeAlign>(*_imu_node->imu_integration,
+                                                                          tij,
+                                                                          qij,
+                                                                          q_i);
+            nonlinear_edge->add_vertex(vertex_scale);
+            nonlinear_edge->add_vertex(vertex_q_wb0);
+            nonlinear_edge->add_vertex(vertex_v[_windows.size() - 1]);
+            nonlinear_edge->add_vertex(vertex_v[_windows.size()]);
+            nonlinear_edge->add_vertex(vertex_ba);
+            nonlinear_edge->add_vertex(vertex_bg);
+
+            // 加入到problem
+            nonlinear_problem.add_edge(nonlinear_edge);
+            nonlinear_problem.add_vertex(vertex_v[_windows.size()]);
         }
 
         // 求解线性问题
@@ -156,6 +204,8 @@ namespace vins {
         // 把求解后的结果赋值到顶点中
         scale_est = vertex_scale->get_parameters()[0];
         Qd q_wb0 {vertex_q_wb0->get_parameters()[0], vertex_q_wb0->get_parameters()[1], vertex_q_wb0->get_parameters()[2], vertex_q_wb0->get_parameters()[3]};
+
+        // windows
         for (unsigned long i = 0; i < _windows.size(); ++i) {
             auto &pose = _windows[i]->vertex_pose->parameters();
             Vec3 p {pose(0), pose(1), pose(2)};
@@ -177,6 +227,30 @@ namespace vins {
             motion << v[0], v[1], v[2],
                       vertex_ba->get_parameters()[0], vertex_ba->get_parameters()[1],vertex_ba->get_parameters()[2],
                       vertex_bg->get_parameters()[0], vertex_bg->get_parameters()[1],vertex_bg->get_parameters()[2];
+        }
+
+        // 当前imu
+        {
+            auto &pose = _imu_node->vertex_pose->parameters();
+            Vec3 p {pose(0), pose(1), pose(2)};
+            p = q_wb0 * p * scale_est;
+            pose(0) = p.x();
+            pose(1) = p.y();
+            pose(2) = p.z();
+
+            Qd q {pose(6), pose(3), pose(4), pose(5)};
+            q = q_wb0 * q;
+            pose(3) = q.x();
+            pose(4) = q.y();
+            pose(5) = q.z();
+            pose(6) = q.w();
+
+            auto &motion = _imu_node->vertex_motion->parameters();
+            Vec3 v = vertex_v[_windows.size()]->get_parameters();
+            v = q_wb0 * v * scale_est;
+            motion << v[0], v[1], v[2],
+                    vertex_ba->get_parameters()[0], vertex_ba->get_parameters()[1],vertex_ba->get_parameters()[2],
+                    vertex_bg->get_parameters()[0], vertex_bg->get_parameters()[1],vertex_bg->get_parameters()[2];
         }
 
         std::cout << "nonlinear scale = " << scale_est << std::endl;

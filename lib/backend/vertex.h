@@ -34,7 +34,7 @@ namespace graph_optimization {
         const VecX &get_parameters() const { return _parameters; }
 
         /// 返回参数值
-        VecX parameters() const { return _parameters; }
+//        VecX parameters() const { return _parameters; }
 
         /// 返回参数值的引用
         VecX &parameters() { return _parameters; }

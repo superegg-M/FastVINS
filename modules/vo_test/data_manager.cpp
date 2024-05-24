@@ -69,7 +69,7 @@ namespace vins {
     void FeatureNode::from_local_to_global(const std::vector<Qd> &q_ic, const vector<Vec3> &t_ic) {
         if (vertex_landmark) {
             if (!vertex_point3d) {
-                vertex_point3d = shared_ptr<VertexPoint3d>(new VertexPoint3d);
+                vertex_point3d = std::make_shared<VertexPoint3d>();
             }
 
             // 获取基准imu的信息

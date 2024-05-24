@@ -139,6 +139,7 @@ int main() {
     for (unsigned int n = 0; n < num_data; ++n) {
         estimator.process_imu(dt, simulator._a_buff[n], simulator._w_buff[n]);
         if (n % 20 == 0) {
+            std::cout << "p_gt: " << (simulator._p_buff[n] - simulator._p_buff[0]).transpose() << std::endl;
             auto &&f_per_imu = simulator.get_landmarks_per_pose(simulator._theta_buff[n], simulator._p_buff[n]);
             estimator.process_image(f_per_imu, dt * double(n));
         }

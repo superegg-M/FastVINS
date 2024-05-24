@@ -235,6 +235,7 @@ namespace vins {
 
     public:
         bool is_triangulated {false};
+        bool is_outlier {false};
         Vec3 point;
 
         shared_ptr<VertexInverseDepth> vertex_landmark {nullptr};

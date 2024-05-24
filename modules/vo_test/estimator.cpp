@@ -34,6 +34,8 @@ namespace vins {
         _vertex_ext[0]->set_parameters(pose);
 
         solver_flag = INITIAL;
+
+        _problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
     }
 
     bool Estimator::initialize() {
@@ -44,6 +46,14 @@ namespace vins {
             std::cout << "done structure_from_motion" << std::endl;
             if (align_visual_to_imu()) {
                 std::cout << "done align_visual_to_imu" << std::endl;
+
+                // 把当前imu的信息赋值到state中
+                _state.p = _imu_node->get_p();
+                _state.q = _imu_node->get_q().normalized();
+                _state.v = _imu_node->get_v();
+                _state.ba = _imu_node->get_ba();
+                _state.bg = _imu_node->get_bg();
+
                 return true;
             }
         }
@@ -55,6 +65,8 @@ namespace vins {
         if (_windows.full() && solver_flag == NON_LINEAR) {
             TicToc t_tri;
 //            backend_optimization();
+            // 求解非线性最小二乘问题
+            _problem.solve(10);
         }
     }
 
@@ -70,16 +82,20 @@ namespace vins {
                 ImuNode *imu_oldest {nullptr};
                 _windows.pop_oldest(imu_oldest);    // 弹出windows中最老的imu
 
+                // 边缘化掉oldest imu。在margin时会把pose和motion的顶点从problem中删除，同时与pose和motion相关的边也会被全部删除
+                _problem.marginalize(imu_oldest->vertex_pose, imu_oldest->vertex_motion);
+
                 // 遍历被删除的imu的所有特征点，在特征点的imu队列中，删除该imu
                 for (auto &feature_in_cameras : imu_oldest->features_in_cameras) {
                     auto &&feature_id = feature_in_cameras.first;
                     auto &&feature_it = _feature_map.find(feature_id);
                     if (feature_it == _feature_map.end()) {
-                        std::cout << "!!!!!!!! Can't find feature id in feature map when marg oldest !!!!!!!!!" << std::endl;
+//                        std::cout << "!!!!!!!! Can't find feature id in feature map when marg oldest !!!!!!!!!" << std::endl;
                         continue;
                     }
-                    auto &&feature_node = feature_it->second;
-                    auto &&vertex_landmark = feature_node->vertex_landmark;
+
+                    auto feature_node = feature_it->second;
+                    auto vertex_landmark = feature_node->vertex_landmark;
                     auto &&imu_deque = feature_node->imu_deque;
                     // 应该是不需要进行判断的
 //                    if (imu_deque.oldest() == imu_oldest) {
@@ -87,22 +103,19 @@ namespace vins {
 //                    }
                     imu_deque.pop_oldest();
 
-                    // TODO: 删除重投影edge与预积分edge
-
                     // 若特征点的keyframe小于2，则删除该特征点, 否则需要为特征点重新计算深度并且重新构建重投影edge,
                     if (imu_deque.size() < 2) {
                         // 在map中删除特征点
                         _feature_map.erase(feature_id);
-
-                        // 释放特征点node的空间
-                        delete feature_node;
 
                         if (vertex_landmark) {
                             // 在problem中删除特征点
                             _problem.remove_vertex(vertex_landmark);
                         }
 
-                        // TODO: 在新的oldest imu中，把feature删除
+                        // 释放特征点node的空间
+                        delete feature_node;
+                        // TODO: 在新的oldest imu中，把feature删除, 不然feature依然会存在于oldest imu中, 但不在feature_map中
                     } else {
                         if (vertex_landmark) {
                             // 曾经的host imu
@@ -156,6 +169,7 @@ namespace vins {
                                 edge_reproj->add_vertex(host_imu_pose);
                                 edge_reproj->add_vertex(host_imu_pose);
                                 edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                                _problem.add_edge(edge_reproj);
                             }
 
                             // 其他imu
@@ -177,6 +191,7 @@ namespace vins {
                                     edge_reproj->add_vertex(host_imu_pose);
                                     edge_reproj->add_vertex(other_imu_pose);
                                     edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                                    _problem.add_edge(edge_reproj);
                                 }
                             }
                         }
@@ -188,6 +203,10 @@ namespace vins {
                 std::cout << "MARGIN_NEW" << std::endl;
                 ImuNode *imu_newest {nullptr};
                 _windows.pop_newest(imu_newest);    // 弹出windows中最新的imu
+
+                // 边缘化掉newest imu
+                // 在margin时会把pose和motion的顶点从problem中删除，同时与pose和motion相关的边也会被全部删除
+                _problem.marginalize(imu_newest->vertex_pose, imu_newest->vertex_motion);
 
                 // 遍历被删除的imu的所有特征点，在特征点的imu队列中，删除该imu
                 for (auto &feature_in_cameras : imu_newest->features_in_cameras) {
@@ -209,8 +228,11 @@ namespace vins {
                     // 如果feature不在所有的imu中出现了，则需要删除feature
                     if (feature_node->imu_deque.empty()
                         && _imu_node->features_in_cameras.find(feature_id) == _imu_node->features_in_cameras.end()) {
-                        // 在problem中删除特征点
-                        _problem.remove_vertex(vertex_landmark);
+
+                        if (vertex_landmark) {
+                            // 在problem中删除特征点
+                            _problem.remove_vertex(vertex_landmark);
+                        }
 
                         // 在map中删除特征点
                         _feature_map.erase(feature_id);

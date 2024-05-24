@@ -48,6 +48,7 @@ namespace vins {
             edge_imu->add_vertex(_windows.newest()->vertex_motion);
             edge_imu->add_vertex(_imu_node->vertex_pose);
             edge_imu->add_vertex(_imu_node->vertex_motion);
+            _problem.add_edge(edge_imu);
         }
 
         // 遍历image中的每个feature
@@ -152,6 +153,7 @@ namespace vins {
                         edge_reproj->add_vertex(host_imu_pose);
                         edge_reproj->add_vertex(host_imu_pose);
                         edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                        _problem.add_edge(edge_reproj);
                     }
 
                     // deque中除了host的其他imu
@@ -194,6 +196,7 @@ namespace vins {
                             edge_reproj->add_vertex(host_imu_pose);
                             edge_reproj->add_vertex(other_imu_pose);
                             edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                            _problem.add_edge(edge_reproj);
                         }
                     }
 
@@ -224,6 +227,7 @@ namespace vins {
                         edge_reproj->add_vertex(host_imu_pose);
                         edge_reproj->add_vertex(_imu_node->vertex_pose);
                         edge_reproj->add_vertex(_vertex_ext[current_camera_id]);
+                        _problem.add_edge(edge_reproj);
                     }
 
                     // 最小二乘计算深度
@@ -236,6 +240,9 @@ namespace vins {
                     // 设置landmark顶点的逆深度
                     vertex_landmark->set_parameters(Vec1(1. / depth));
                 } else {
+                    // 把landmark顶点加入到problem中
+                    _problem.add_vertex(feature_node->vertex_landmark);
+
                     // 对当前imu下的所有cameras计算视觉重投影误差
                     for (auto &camera : cameras) {
                         unsigned long other_camera_id = camera.first;  // camera的id
@@ -249,6 +256,7 @@ namespace vins {
                         edge_reproj->add_vertex(host_imu_pose);
                         edge_reproj->add_vertex(_imu_node->vertex_pose);
                         edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                        _problem.add_edge(edge_reproj);
                     }
                 }
             }
@@ -276,7 +284,7 @@ namespace vins {
                     double v_j = cameras[0].second.y();
 
                     double du = u_j - u_i;
-                    double dv = v_j - v_j;
+                    double dv = v_j - v_i;
 
                     parallax_sum += sqrt(du * du + dv * dv);
                     ++parallax_num;
@@ -318,7 +326,6 @@ namespace vins {
                 bool is_initialized = initialize();
                 if (is_initialized) {
                     cout << "Initialization finish!" << endl;
-                    assert(-1 > 0);
 
                     // 初始化后进行非线性优化
                     solver_flag = NON_LINEAR;
@@ -329,6 +336,8 @@ namespace vins {
                     _state.v = _imu_node->get_v();
                     _state.ba = _imu_node->get_ba();
                     _state.bg = _imu_node->get_bg();
+
+                    std::cout << "p_est: " << _state.p.transpose() << std::endl;
                 }
             }
         } else {
@@ -342,6 +351,8 @@ namespace vins {
             _state.v = _imu_node->get_v();
             _state.ba = _imu_node->get_ba();
             _state.bg = _imu_node->get_bg();
+
+            std::cout << "p_est: " << _state.p.transpose() << std::endl;
         }
 
         slide_window();

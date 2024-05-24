@@ -36,6 +36,9 @@ namespace graph_optimization {
         // 如果顶点不在顶点map中, 则返回false
         if (_vertices.find(vertex->id()) == _vertices.end()) {
             // LOG(WARNING) << "The vertex " << vertex->Id() << " is not in the problem!" << endl;
+//            std::cout << "The vertex " << vertex->id() << " is not in the problem!" << std::endl;
+            auto &&edges = get_connected_edges(vertex);
+//            std::cout << "edges.size(): " << edges.size() << std::endl;
             return false;
         }
 
@@ -79,6 +82,8 @@ namespace graph_optimization {
 
     bool Problem::solve(unsigned long iterations) {
         if (_edges.empty() || _vertices.empty()) {
+//            std::cout << "_edges.size() = " << _edges.size() << std::endl;
+//            std::cout << "_vertices.size() = " << _vertices.size() << std::endl;
             std::cerr << "\nCannot solve problem without edges or vertices" << std::endl;
             return false;
         }

@@ -98,10 +98,10 @@ namespace vins {
             global_triangulate_with(imu_j, imu_i);
         }
 
-//        // 遍历所有特征点, 对没有赋值的特征点进行三角化
-//        for (auto &feature_it : _feature_map) {
-//            global_triangulate_feature(feature_it.second);
-//        }
+        // 遍历所有特征点, 对没有赋值的特征点进行三角化
+        for (auto &feature_it : _feature_map) {
+            global_triangulate_feature(feature_it.second);
+        }
 
         // 把所有pose和feature都调整到以第0帧为基准
         Vec7 pose_0 = _windows[0]->vertex_pose->get_parameters();

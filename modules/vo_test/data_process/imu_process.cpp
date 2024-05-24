@@ -33,7 +33,7 @@ namespace vins {
         _state.q *= delta_q.unit_quaternion();
         _state.q.normalize();
         Vec3 acc1_corr = _state.q.toRotationMatrix() * (linear_acceleration - _state.ba);
-        Vec3 acc_corr = 0.5 * (acc0_corr + acc1_corr) - _g;
+        Vec3 acc_corr = 0.5 * (acc0_corr + acc1_corr) + _g;
         _state.p += (0.5 * acc_corr * dt + _state.v) * dt;
         _state.v += acc_corr * dt;
 

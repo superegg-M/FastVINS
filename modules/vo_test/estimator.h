@@ -105,6 +105,10 @@ namespace vins {
             MARGIN_OLD = 0,
             MARGIN_SECOND_NEW = 1
         };
+
+        bool _is_visual_initialized {false};
+        bool _is_visual_aligned_to_imu {false};
+
 //////////////// OUR SOLVER ///////////////////
         MatXX Hprior_;
         VecX bprior_;

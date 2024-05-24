@@ -3,6 +3,7 @@
 //
 
 #include "problem_slam.h"
+#include <iostream>
 
 // #define USE_PCG_SOLVER
 
@@ -17,6 +18,7 @@ namespace graph_optimization {
         // 重新计算一篇ordering
         initialize_ordering();
         ulong state_dim = _ordering_poses;
+        std::cout << "state_dim = " << state_dim << std::endl;
 
         // 所需被marginalize的edge
         std::vector<shared_ptr<Edge>> marginalized_edges = get_connected_edges(vertex_pose);
@@ -42,6 +44,7 @@ namespace graph_optimization {
         ulong cols = state_dim + marginalized_landmark_size;
         MatXX h_state_landmark(MatXX::Zero(cols, cols));
         VecX b_state_landmark(VecX::Zero(cols));
+        std::cout << "marginalized_landmark_size = " << marginalized_landmark_size << std::endl;
         for (auto &edge : marginalized_edges) {
             // 若曾经solve problem, 则无需再次计算
             // edge->compute_residual();
@@ -129,6 +132,10 @@ namespace graph_optimization {
 
         // 叠加之前的先验
         if(_h_prior.rows() > 0) {
+            std::cout << "h_state_schur.size: " << h_state_schur.rows() << ", " << h_state_schur.cols() << std::endl;
+            std::cout << "_h_prior.size: " << _h_prior.rows() << ", " << _h_prior.cols() << std::endl;
+            std::cout << "b_state_schur.size: " << b_state_schur.rows() << std::endl;
+            std::cout << "_b_prior.size: " << _b_prior.rows() << std::endl;
             h_state_schur += _h_prior;
             b_state_schur += _b_prior;
         }
@@ -222,10 +229,13 @@ namespace graph_optimization {
             remove_vertex(vertex_motion);
         }
 
-        // 移除路标
-        for (auto &landmark : marginalized_landmark) {
-            remove_vertex(landmark.second);
-        }
+        /*
+         * 不能在这里移除路标点，因为路标在别的frame中，可能能重新构建重投影误差
+         * */
+//        // 移除路标
+//        for (auto &landmark : marginalized_landmark) {
+//            remove_vertex(landmark.second);
+//        }
 
         return true;
     }
