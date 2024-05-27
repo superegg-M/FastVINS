@@ -28,6 +28,8 @@ namespace graph_optimization {
         /// 计算雅可比
         void compute_jacobians() override;
 
+        void set_pt_i(const Vec3& pt_i) { _pt_i = pt_i; }
+        void set_pt_j(const Vec3& pt_j) { _pt_j = pt_j; }
         void set_translation_imu_from_camera(Eigen::Quaterniond &qic, Vec3 &tic) { _qic = qic; _tic = tic; }
 
     private:
