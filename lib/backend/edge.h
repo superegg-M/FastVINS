@@ -65,7 +65,10 @@ namespace graph_optimization {
         std::shared_ptr<Vertex> get_vertex(unsigned long i) { return _vertices[i]; }
 
         /// 返回所有顶点
-        const std::vector<std::shared_ptr<Vertex>> &vertices() const { return _vertices; }
+        const std::vector<std::shared_ptr<Vertex>> &get_vertices() const { return _vertices; }
+
+        /// 返回所有顶点
+        std::vector<std::shared_ptr<Vertex>> &vertices() { return _vertices; }
 
         /// 返回关联顶点个数
         size_t num_vertices() const { return _vertices.size(); }
