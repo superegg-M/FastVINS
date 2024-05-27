@@ -29,7 +29,7 @@ public:
         // landmarks生成
         double deg2rad = EIGEN_PI / 180.;
         for (int i = 0; i < 360; ++i) {
-            double angle = double(i) * deg2rad;
+            double angle = double(i % 360) * deg2rad;
             double cos_ang = cos(angle);
             double sin_ang = sin(angle);
             // 轴向
