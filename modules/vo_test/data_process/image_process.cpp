@@ -65,6 +65,8 @@ namespace vins {
                 feature_node = new FeatureNode(feature_id);
                 _feature_map.emplace(feature_id, feature_node);
 //                feature_it = _feature_map.find(feature_id);
+
+                // TODO: 对于新的特征点，其实不需要进行重投影误差的计算
             } else {
                 feature_node = feature_it->second;
                 ++last_track_num;   // 记录有几个特征点被跟踪了
@@ -80,7 +82,7 @@ namespace vins {
                 _imu_node->features_in_cameras[feature_id].emplace_back(camera.first, point);
             }
 
-            // 判断feature是否能够被用于计算重投影误差
+            // 利用windows中的信息，判断feature是否能够被用于计算重投影误差
             if (_windows.is_feature_suitable_to_reproject(feature_id)) {
                 // 获取feature的参考值
                 auto &&host_imu = feature_node->imu_deque.oldest();   // 第一次看到feature的imu
@@ -89,6 +91,7 @@ namespace vins {
                 auto &&host_camera_id = host_cameras[0].first;  // camera的id
                 auto &&host_pixel_coord = host_cameras[0].second;    // feature在imu的左目的像素坐标
 
+                // TODO: 不使用指针是否为nullptr来判断，而是用is_triangulated来判断
                 // 若特征点没有进行过初始化，则需要先进行三角化, 同时对windows中的所有frame计算视觉重投影误差
                 if (!feature_node->vertex_landmark) {
                     // 构建landmark顶点
@@ -134,15 +137,15 @@ namespace vins {
 
                         Eigen::Vector3d t_wcj_w = p_i + r_i * _t_ic[other_camera_id];
                         Eigen::Matrix3d r_wcj = r_i * _q_ic[other_camera_id];
-                        Eigen::Vector3d t_cicj_ci = r_wci.transpose() * (t_wcj_w - t_wci_w);
-                        Eigen::Matrix3d r_cicj = r_wci.transpose() * r_wcj;
+                        Eigen::Vector3d t_cjci_cj = r_wcj.transpose() * (t_wci_w - t_wcj_w);
+                        Eigen::Matrix3d r_cjci = r_wcj.transpose() * r_wci;
 
-                        P.leftCols<3>() = r_cicj.transpose();
-                        P.rightCols<1>() = -r_cicj.transpose() * t_cicj_ci;
+                        P.leftCols<3>() = r_cjci;
+                        P.rightCols<1>() = t_cjci_cj;
 
-                        f = other_pixel_coord.normalized();
-                        svd_A.row(2 * index) = f[0] * P.row(2) - f[2] * P.row(0);
-                        svd_A.row(2 * index + 1) = f[1] * P.row(2) - f[2] * P.row(1);
+                        f = other_pixel_coord / other_pixel_coord.z();
+                        svd_A.row(2 * index) = f[0] * P.row(2) - P.row(0);
+                        svd_A.row(2 * index + 1) = f[1] * P.row(2) - P.row(1);
 
                         // 构建视觉重投影误差边
                         shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
@@ -177,15 +180,15 @@ namespace vins {
 
                             Eigen::Vector3d t_wcj_w = p_j + r_j * _t_ic[other_camera_id];
                             Eigen::Matrix3d r_wcj = r_j * _q_ic[other_camera_id];
-                            Eigen::Vector3d t_cicj_ci = r_wci.transpose() * (t_wcj_w - t_wci_w);
-                            Eigen::Matrix3d r_cicj = r_wci.transpose() * r_wcj;
+                            Eigen::Vector3d t_cjci_cj = r_wcj.transpose() * (t_wci_w - t_wcj_w);
+                            Eigen::Matrix3d r_cjci = r_wcj.transpose() * r_wci;
 
-                            P.leftCols<3>() = r_cicj.transpose();
-                            P.rightCols<1>() = -r_cicj.transpose() * t_cicj_ci;
+                            P.leftCols<3>() = r_cjci;
+                            P.rightCols<1>() = t_cjci_cj;
 
-                            f = other_pixel_coord.normalized();
-                            svd_A.row(2 * index) = f[0] * P.row(2) - f[2] * P.row(0);
-                            svd_A.row(2 * index + 1) = f[1] * P.row(2) - f[2] * P.row(1);
+                            f = other_pixel_coord / other_pixel_coord.z();
+                            svd_A.row(2 * index) = f[0] * P.row(2) - P.row(0);
+                            svd_A.row(2 * index + 1) = f[1] * P.row(2) - P.row(1);
 
                             // 构建视觉重投影误差边
                             shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
@@ -203,20 +206,22 @@ namespace vins {
                     // 当前的imu
                     auto state_r = _state.q.toRotationMatrix();
                     for (auto &camera : cameras) {
+                        ++index;
+
                         unsigned long current_camera_id = camera.first;  // camera的id
                         Vec3 current_pixel_coord = {camera.second.x(), camera.second.y(), camera.second.z()};    // feature在imu的左目的像素坐标
 
                         Eigen::Vector3d t_wcj_w = _state.p + state_r * _t_ic[current_camera_id];
                         Eigen::Matrix3d r_wcj = state_r * _q_ic[current_camera_id];
-                        Eigen::Vector3d t_cicj_ci = r_wci.transpose() * (t_wcj_w - t_wci_w);
-                        Eigen::Matrix3d r_cicj = r_wci.transpose() * r_wcj;
+                        Eigen::Vector3d t_cjci_cj = r_wcj.transpose() * (t_wci_w - t_wcj_w);
+                        Eigen::Matrix3d r_cjci = r_wcj.transpose() * r_wci;
 
-                        P.leftCols<3>() = r_cicj.transpose();
-                        P.rightCols<1>() = -r_cicj.transpose() * t_cicj_ci;
+                        P.leftCols<3>() = r_cjci;
+                        P.rightCols<1>() = t_cjci_cj;
 
-                        f = current_pixel_coord.normalized();
-                        svd_A.row(2 * index) = f[0] * P.row(2) - f[2] * P.row(0);
-                        svd_A.row(2 * index + 1) = f[1] * P.row(2) - f[2] * P.row(1);
+                        f = current_pixel_coord / current_pixel_coord.z();
+                        svd_A.row(2 * index) = f[0] * P.row(2) - P.row(0);
+                        svd_A.row(2 * index + 1) = f[1] * P.row(2) - P.row(1);
 
                         // 构建视觉重投影误差边
                         shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
