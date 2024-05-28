@@ -137,11 +137,9 @@ namespace vins {
 
                         Eigen::Vector3d t_wcj_w = p_i + r_i * _t_ic[other_camera_id];
                         Eigen::Matrix3d r_wcj = r_i * _q_ic[other_camera_id];
-                        Eigen::Vector3d t_cjci_cj = r_wcj.transpose() * (t_wci_w - t_wcj_w);
-                        Eigen::Matrix3d r_cjci = r_wcj.transpose() * r_wci;
 
-                        P.leftCols<3>() = r_cjci;
-                        P.rightCols<1>() = t_cjci_cj;
+                        P.leftCols<3>() = r_wcj.transpose() * r_wci;    // r_cjci
+                        P.rightCols<1>() = r_wcj.transpose() * (t_wci_w - t_wcj_w); // t_cjci_cj
 
                         f = other_pixel_coord / other_pixel_coord.z();
                         svd_A.row(2 * index) = f[0] * P.row(2) - P.row(0);
@@ -180,11 +178,9 @@ namespace vins {
 
                             Eigen::Vector3d t_wcj_w = p_j + r_j * _t_ic[other_camera_id];
                             Eigen::Matrix3d r_wcj = r_j * _q_ic[other_camera_id];
-                            Eigen::Vector3d t_cjci_cj = r_wcj.transpose() * (t_wci_w - t_wcj_w);
-                            Eigen::Matrix3d r_cjci = r_wcj.transpose() * r_wci;
 
-                            P.leftCols<3>() = r_cjci;
-                            P.rightCols<1>() = t_cjci_cj;
+                            P.leftCols<3>() = r_wcj.transpose() * r_wci;    // r_cjci;
+                            P.rightCols<1>() = r_wcj.transpose() * (t_wci_w - t_wcj_w); // t_cjci_cj
 
                             f = other_pixel_coord / other_pixel_coord.z();
                             svd_A.row(2 * index) = f[0] * P.row(2) - P.row(0);
@@ -213,11 +209,9 @@ namespace vins {
 
                         Eigen::Vector3d t_wcj_w = _state.p + state_r * _t_ic[current_camera_id];
                         Eigen::Matrix3d r_wcj = state_r * _q_ic[current_camera_id];
-                        Eigen::Vector3d t_cjci_cj = r_wcj.transpose() * (t_wci_w - t_wcj_w);
-                        Eigen::Matrix3d r_cjci = r_wcj.transpose() * r_wci;
 
-                        P.leftCols<3>() = r_cjci;
-                        P.rightCols<1>() = t_cjci_cj;
+                        P.leftCols<3>() = r_wcj.transpose() * r_wci;    // r_cjci;
+                        P.rightCols<1>() = r_wcj.transpose() * (t_wci_w - t_wcj_w); // t_cjci_cj;
 
                         f = current_pixel_coord / current_pixel_coord.z();
                         svd_A.row(2 * index) = f[0] * P.row(2) - P.row(0);
