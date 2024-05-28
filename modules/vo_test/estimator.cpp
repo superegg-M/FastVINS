@@ -65,8 +65,15 @@ namespace vins {
         if (_windows.full() && solver_flag == NON_LINEAR) {
             TicToc t_tri;
 //            backend_optimization();
+
+            // fix住最老的pose, 以保证可观
+            _windows.oldest()->vertex_pose->set_fixed(true);
+
             // 求解非线性最小二乘问题
             _problem.solve(10);
+
+            // 解锁最老的pose
+            _windows.oldest()->vertex_pose->set_fixed(false);
         }
     }
 
