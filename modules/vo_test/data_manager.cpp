@@ -8,7 +8,7 @@
 
 namespace vins {
     ImuNode::ImuNode(IMUIntegration *imu_integration_pt, unsigned int num_cameras)
-    : imu_integration(imu_integration_pt), features_in_cameras(2 * num_cameras) {
+    : features_in_cameras(2 * num_cameras), imu_integration(imu_integration_pt) {
     }
 
     ImuNode::~ImuNode() {
