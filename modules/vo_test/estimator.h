@@ -117,8 +117,8 @@ namespace vins {
 
         Eigen::Matrix2d project_sqrt_info_;
 //////////////// OUR SOLVER //////////////////
-        SolverFlag solver_flag;
-        MarginalizationFlag  marginalization_flag;
+        SolverFlag solver_flag {INITIAL};
+        MarginalizationFlag  marginalization_flag {MARGIN_OLD};
 
     public:
         Vec3 _g {0., 0., -9.8};
@@ -136,7 +136,7 @@ namespace vins {
         unordered_map<unsigned long, FeatureNode*> _feature_map;
         unordered_map<unsigned long, FrameNode*> _feature_based_frame;
 
-        ImuNode *_imu_node;
+        ImuNode *_imu_node {nullptr};
         ImuWindows _windows;
     };
 }
