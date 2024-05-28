@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
-#include_directories("E:\\CLionProjects\\GraphOptimization\\lib\\eigen3")
+include_directories("E:\\CLionProjects\\GraphOptimization\\lib\\eigen3")
 
 set(GRAPH_OPTIMIZATION_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE STRING "grath optimization location" FORCE)
 
