@@ -128,6 +128,9 @@ namespace graph_optimization {
             // (Hpp - Hsl * Hll^-1 * Hlp) * dxp = bp - Hsl * Hll^-1 * bl
             h_state_schur = h_state_landmark.block(0, 0, state_dim, state_dim) - Hsl * temp_H;
             b_state_schur = bss - Hsl * temp_b;
+        } else {
+            h_state_schur = h_state_landmark;
+            b_state_schur = b_state_landmark;
         }
 
         // 叠加之前的先验
