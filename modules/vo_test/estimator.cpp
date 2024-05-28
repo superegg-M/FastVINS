@@ -64,7 +64,6 @@ namespace vins {
     void Estimator::solve_odometry() {
         if (_windows.full() && solver_flag == NON_LINEAR) {
             TicToc t_tri;
-//            backend_optimization();
 
             // fix住最老的pose, 以保证可观
             _windows.oldest()->vertex_pose->set_fixed(true);

@@ -83,17 +83,11 @@ namespace vins {
 
         void slide_window();
         void solve_odometry();
-        void slide_window_new();
-        void slide_window_old();
+
         void optimization();
-        void backend_optimization();
 
         void problem_solve();
-        void marg_old_frame();
-        void marg_new_frame();
 
-        void vector2double();
-        void double2vector();
         bool failure_detection();
 
         enum SolverFlag {
