@@ -103,6 +103,11 @@ namespace vins {
         const Vec3 &get_bg() const { return _bg; }
         static const Vec3 &get_gravity() { return _gravity; }
 
+        size_t size() const { return _dt_buf.size(); }
+        const std::vector<double> &get_dt_buf() const { return _dt_buf; }
+        const VecVec3 &get_acc_buf() const { return _acc_buf; }
+        const VecVec3 &get_gyro_buf() const { return _gyro_buf; }
+
     protected:
         void calculate_cov(const Mat33 &delta_r, const Mat33 &delta_r_last,
                            const Mat33 &delta_r_a_hat, const Mat33 &delta_r_a_hat_last,
