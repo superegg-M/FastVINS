@@ -121,9 +121,9 @@ namespace vins {
                     P.leftCols<3>() = Eigen::Matrix3d::Identity();
                     P.rightCols<1>() = Eigen::Vector3d::Zero();
 
-                    f = host_pixel_coord.normalized();
-                    svd_A.row(0) = f[0] * P.row(2) - f[2] * P.row(0);
-                    svd_A.row(1) = f[1] * P.row(2) - f[2] * P.row(1);
+                    f = host_pixel_coord / host_pixel_coord.z();
+                    svd_A.row(0) = f[0] * P.row(2) - P.row(0);
+                    svd_A.row(1) = f[1] * P.row(2) - P.row(1);
 
                     unsigned long index = 0;
 
