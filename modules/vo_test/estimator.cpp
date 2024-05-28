@@ -79,8 +79,10 @@ namespace vins {
         if (_windows.full()) {
             if (marginalization_flag == MARGIN_OLD) {
                 std::cout << "MARGIN_OLD" << std::endl;
+
+                // 弹出windows中最老的imu
                 ImuNode *imu_oldest {nullptr};
-                _windows.pop_oldest(imu_oldest);    // 弹出windows中最老的imu
+                _windows.pop_oldest(imu_oldest);
 
                 // 边缘化掉oldest imu。在margin时会把pose和motion的顶点从problem中删除，同时与pose和motion相关的边也会被全部删除
                 _problem.marginalize(imu_oldest->vertex_pose, imu_oldest->vertex_motion);
@@ -232,12 +234,43 @@ namespace vins {
                 delete imu_oldest;
             } else {
                 std::cout << "MARGIN_NEW" << std::endl;
-                ImuNode *imu_newest {nullptr};
-                _windows.pop_newest(imu_newest);    // 弹出windows中最新的imu
 
-                // 边缘化掉newest imu
-                // 在margin时会把pose和motion的顶点从problem中删除，同时与pose和motion相关的边也会被全部删除
+                // 弹出windows中最新的imu
+                ImuNode *imu_newest {nullptr};
+                _windows.pop_newest(imu_newest);
+
+                // 边缘化掉旧的newest, 同时在problem中删除其pose和motion顶点以及与之相关的预积分与重投影误差边
                 _problem.marginalize(imu_newest->vertex_pose, imu_newest->vertex_motion);
+
+                /* 1. 把_imu_node中的预积分值叠加到旧的newest的预积分中
+                 * 2. 把_imu_node与旧的newest中的预积分指针进行交换
+                 * 3. 构建新的预积分edge, 连接新的newest与_imu_node
+                 * */
+                if (_imu_node->imu_integration && imu_newest->imu_integration) {
+                    const auto &curr_dt_buff = _imu_node->imu_integration->get_dt_buf();
+                    const auto &curr_acc_buff = _imu_node->imu_integration->get_acc_buf();
+                    const auto &curr_gyro_buff = _imu_node->imu_integration->get_gyro_buf();
+
+                    // 把_imu_node中的预积分值叠加到旧的newest的预积分中
+                    for (size_t i = 0; i < _imu_node->imu_integration->size(); ++i) {
+                        imu_newest->imu_integration->push_back(curr_dt_buff[i], curr_acc_buff[i], curr_gyro_buff[i]);
+                    }
+
+                    // 把_imu_node与旧的newest中的预积分指针进行交换, 使得旧的newest的析构函数删除的是没交换前_imu_node的预积分
+                    auto curr_imu_integration = _imu_node->imu_integration;
+                    _imu_node->imu_integration = imu_newest->imu_integration;
+                    imu_newest->imu_integration = curr_imu_integration;
+
+                    // 构建新的预积分edge, 连接新的newest与_imu_node
+                    if (_imu_node->imu_integration->get_sum_dt() < 10.) {
+                        shared_ptr<EdgeImu> edge_imu(new EdgeImu(*_imu_node->imu_integration));
+                        edge_imu->add_vertex(_windows.newest()->vertex_pose);
+                        edge_imu->add_vertex(_windows.newest()->vertex_motion);
+                        edge_imu->add_vertex(_imu_node->vertex_pose);
+                        edge_imu->add_vertex(_imu_node->vertex_motion);
+                        _problem.add_edge(edge_imu);
+                    }
+                }
 
                 // 遍历被删除的imu的所有特征点，在特征点的imu队列中删除该imu
                 for (auto &feature_in_cameras : imu_newest->features_in_cameras) {
@@ -247,21 +280,19 @@ namespace vins {
                         std::cout << "!!!!!!!! Can't find feature id in feature map when marg newest !!!!!!!!!" << std::endl;
                         continue;
                     }
-                    auto &&feature_node = feature_it->second;
-                    auto &&vertex_landmark = feature_node->vertex_landmark;
+                    auto feature_node = feature_it->second;
+                    auto vertex_landmark = feature_node->vertex_landmark;
                     auto &&imu_deque = feature_node->imu_deque;
 
                     // 移除feature的imu队列中的最新帧
                     imu_deque.pop_newest();
 
-                    // TODO: 删除重投影edge与预积分edge
-
                     // 如果feature不在所有的imu中出现了，则需要删除feature
-                    if (imu_deque.empty()
+                    if (imu_deque.size() < 2
                         && _imu_node->features_in_cameras.find(feature_id) == _imu_node->features_in_cameras.end()) {
 
                         if (vertex_landmark) {
-                            // 在problem中删除特征点
+                            // 在problem中删除特征点, 同时把与之相关的edge删除
                             _problem.remove_vertex(vertex_landmark);
                         }
 
@@ -271,8 +302,6 @@ namespace vins {
                         // 释放特征点node的空间
                         delete feature_node;
                     }
-
-                    // TODO: 对_imu_node的预积分值进行修改, 把imu_newest中的预积分叠加到_imu_node中
                 }
                 // 释放imu node的空间
                 delete imu_newest;
