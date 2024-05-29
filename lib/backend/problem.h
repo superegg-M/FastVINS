@@ -24,8 +24,8 @@ namespace graph_optimization {
             LBFGS
         };
         typedef unsigned long ulong;
-//    typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
-        typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
+        typedef std::unordered_map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
+//        typedef std::map<unsigned long, std::shared_ptr<Vertex>> HashVertex;
         typedef std::unordered_map<unsigned long, std::shared_ptr<Edge>> HashEdge;
         typedef std::unordered_multimap<unsigned long, std::shared_ptr<Edge>> HashVertexIdToEdge;
 
@@ -41,6 +41,10 @@ namespace graph_optimization {
         bool remove_edge(const std::shared_ptr<Edge>& edge);
         void extend_prior_hessian_size(ulong dim);
         bool solve(unsigned long iterations);
+
+        HashVertex &vertices() { return _vertices; }   ///< 所有的顶点
+        HashEdge &edges() { return _edges; }    ///< 所有的边
+        HashVertexIdToEdge &vertex_to_edge() { return _vertex_to_edge; }     ///< pair(顶点id, 与该顶点相连的所有边)
 
     public:
         std::vector<std::shared_ptr<Edge>> get_connected_edges(const std::shared_ptr<Vertex>& vertex);  ///< 获取某个顶点连接到的边
