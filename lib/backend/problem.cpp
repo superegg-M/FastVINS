@@ -37,7 +37,7 @@ namespace graph_optimization {
         if (_vertices.find(vertex->id()) == _vertices.end()) {
             // LOG(WARNING) << "The vertex " << vertex->Id() << " is not in the problem!" << endl;
 //            std::cout << "The vertex " << vertex->id() << " is not in the problem!" << std::endl;
-            auto &&edges = get_connected_edges(vertex);
+//            auto &&edges = get_connected_edges(vertex);
 //            std::cout << "edges.size(): " << edges.size() << std::endl;
             return false;
         }
@@ -48,7 +48,7 @@ namespace graph_optimization {
             remove_edge(edge);
         }
 
-        vertex->set_ordering_id(-1);      // used to debug
+        vertex->set_ordering_id(Vertex::INVALID_ID);      // used to debug
         _vertices.erase(vertex->id());
         _vertex_to_edge.erase(vertex->id());
 
