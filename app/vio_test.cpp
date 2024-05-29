@@ -112,8 +112,8 @@ public:
     vector<Vec3> _w_buff;
 
 public:
-    Vec3 _ba;
-    Vec3 _bg;
+    Vec3 _ba {0.1, 0.1, 0.1};
+    Vec3 _bg {0.01, 0.01, 0.01};
 
 public:
     double _dt;
@@ -139,7 +139,10 @@ int main() {
     for (unsigned int n = 0; n < num_data; ++n) {
         estimator.process_imu(dt, simulator._a_buff[n], simulator._w_buff[n]);
         if (n % 20 == 0) {
+            Qd q_wi {cos(0.5 * simulator._theta_buff[n]), 0., 0., sin(0.5 * simulator._theta_buff[n])};
+            std::cout << "q_gt: " << q_wi.w() << ", " << q_wi.x() << ", " << q_wi.y() << ", " << q_wi.z()<< std::endl;
             std::cout << "p_gt: " << (simulator._p_buff[n] - simulator._p_buff[0]).transpose() << std::endl;
+            std::cout << "v_gt: " << (simulator._v_buff[n]).transpose() << std::endl;
             auto &&f_per_imu = simulator.get_landmarks_per_pose(simulator._theta_buff[n], simulator._p_buff[n]);
             estimator.process_image(f_per_imu, dt * double(n));
         }
