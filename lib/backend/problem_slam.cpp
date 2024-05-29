@@ -21,7 +21,7 @@ namespace graph_optimization {
         std::cout << "state_dim = " << state_dim << std::endl;
 
         // 所需被marginalize的edge
-        std::vector<shared_ptr<Edge>> marginalized_edges = get_connected_edges(vertex_pose);
+        auto &&marginalized_edges = get_connected_edges(vertex_pose);
 
         // 所需被marginalize的landmark
         ulong marginalized_landmark_size = 0;
@@ -29,6 +29,7 @@ namespace graph_optimization {
         for (auto &edge : marginalized_edges) {
             auto vertices_edge = edge->vertices();
             for (auto &vertex : vertices_edge) {
+                // TODO: 改为_vertices.find(vertex->id()) == _vertices.end()
                 if (vertex->is_ordering_id_invalid()) continue;
                 if (is_landmark_vertex(vertex)
                     && marginalized_landmark.find(vertex->id()) == marginalized_landmark.end()) {
@@ -146,7 +147,7 @@ namespace graph_optimization {
         // 把需要marginalize的pose和motion的vertices移动到最下面
         ulong marginalized_state_dim = 0;
         auto move_vertex_to_bottom = [&](const std::shared_ptr<Vertex>& vertex) {
-            if (vertex->is_ordering_id_invalid()) {
+            if (vertex->is_ordering_id_invalid()) { // TODO: 改为_vertices.find(vertex->id()) == _vertices.end()
                 return;
             }
             ulong idx = vertex->ordering_id();
@@ -177,7 +178,7 @@ namespace graph_optimization {
 
         // marginalize与边相连的所有pose和motion顶点
         auto marginalize_bottom_vertex = [&](const std::shared_ptr<Vertex> &vertex) {
-            if (vertex->is_ordering_id_invalid()) {
+            if (vertex->is_ordering_id_invalid()) { // TODO: 改为_vertices.find(vertex->id()) == _vertices.end()
                 return;
             }
             ulong marginalized_size = vertex->local_dimension();
