@@ -171,68 +171,88 @@ namespace vins {
                             }
                             vertex_landmark->set_parameters(Vec1(1. / depth));
 
-                            // 对所有关于该特征点的edge的host imu进行修改
-                            auto &&edges_of_landmark = _problem.get_connected_edges(vertex_landmark);
-                            for (auto &edge : edges_of_landmark) {
-                                if (edge->type_info() == "EdgeReprojection") {
-                                    if (edge->vertices()[1] == edge->vertices()[2]) {   // 双目重投影
-                                        edge->vertices()[1] = host_imu_pose;
-                                        edge->vertices()[2] = host_imu_pose;
-                                    } else {    // 单目重投影
-                                        edge->vertices()[1] = host_imu_pose;
-                                    }
+//                            // 对所有关于该特征点的edge的host imu进行修改
+//                            auto &&edges_of_landmark = _problem.get_connected_edges(vertex_landmark);
+//                            for (auto &edge : edges_of_landmark) {
+//                                if (edge->type_info() == "EdgeReprojection") {
+//                                    if (edge->vertices()[1] == edge->vertices()[2]) {   // 双目重投影
+//                                        edge->vertices()[1] = host_imu_pose;
+//                                        edge->vertices()[2] = host_imu_pose;
+//                                    } else {    // 单目重投影
+//                                        edge->vertices()[1] = host_imu_pose;
+//                                    }
+//
+//                                    // 修改host_imu的像素坐标
+//                                    auto edge_reproj = (EdgeReprojection *)edge.get();
+//                                    edge_reproj->set_pt_i(host_pixel_coord);
+//                                }
+//                            }
 
-                                    // 修改host_imu的像素坐标
-                                    auto edge_reproj = (EdgeReprojection *)edge.get();
-                                    edge_reproj->set_pt_i(host_pixel_coord);
+                            // 删除landmark及其相关的edge
+                            _problem.remove_vertex(vertex_landmark);
+
+                            // 重新把landmark加入到problem中
+                            _problem.add_vertex(vertex_landmark);
+
+                            // 计算重投影误差edge
+                            // host imu的其他camera
+                            for (unsigned long j = 1; j < host_cameras.size(); ++j) {
+                                auto &&other_camera_id = host_cameras[j].first; // camera的id
+                                auto &&other_pixel_coord = host_cameras[j].second;    // feature在imu的左目的像素坐标
+
+                                shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
+                                        host_pixel_coord,
+                                        other_pixel_coord
+                                ));
+                                edge_reproj->add_vertex(vertex_landmark);
+                                edge_reproj->add_vertex(host_imu_pose);
+                                edge_reproj->add_vertex(host_imu_pose);
+                                edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                                _problem.add_edge(edge_reproj);
+                            }
+
+                            // windows中的imu
+                            for (unsigned long i = 1; i < imu_deque.size(); ++i) {
+                                auto &&other_imu = imu_deque[i];
+                                auto &&other_cameras = other_imu->features_in_cameras[feature_id];
+                                auto &&other_imu_pose = other_imu->vertex_pose;
+
+                                // 遍历所有imu
+                                for (unsigned j = 0; j < other_cameras.size(); ++j) {
+                                    auto &&other_camera_id = other_cameras[j].first; // camera的id
+                                    auto &&other_pixel_coord = other_cameras[j].second;    // feature在imu的左目的像素坐标
+
+                                    shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
+                                            host_pixel_coord,
+                                            other_pixel_coord
+                                    ));
+                                    edge_reproj->add_vertex(vertex_landmark);
+                                    edge_reproj->add_vertex(host_imu_pose);
+                                    edge_reproj->add_vertex(other_imu_pose);
+                                    edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
+                                    _problem.add_edge(edge_reproj);
                                 }
                             }
 
-//                            // 删除landmark及其相关的edge
-//                            _problem.remove_vertex(vertex_landmark);
-//
-//                            // 重新把landmark加入到problem中
-//                            _problem.add_vertex(vertex_landmark);
-//
-//                            // 计算重投影误差edge
-//                            // host imu的其他camera
-//                            for (unsigned long j = 1; j < host_cameras.size(); ++j) {
-//                                auto &&other_camera_id = host_cameras[j].first; // camera的id
-//                                auto &&other_pixel_coord = host_cameras[j].second;    // feature在imu的左目的像素坐标
-//
-//                                shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
-//                                        host_pixel_coord,
-//                                        other_pixel_coord
-//                                ));
-//                                edge_reproj->add_vertex(vertex_landmark);
-//                                edge_reproj->add_vertex(host_imu_pose);
-//                                edge_reproj->add_vertex(host_imu_pose);
-//                                edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
-//                                _problem.add_edge(edge_reproj);
-//                            }
-//
-//                            // 其他imu
-//                            for (unsigned long i = 1; i < imu_deque.size(); ++i) {
-//                                auto &&other_imu = imu_deque[i];
-//                                auto &&other_cameras = other_imu->features_in_cameras[feature_id];
-//                                auto &&other_imu_pose = other_imu->vertex_pose;
-//
-//                                // 遍历所有imu
-//                                for (unsigned j = 0; j < other_cameras.size(); ++j) {
-//                                    auto &&other_camera_id = other_cameras[j].first; // camera的id
-//                                    auto &&other_pixel_coord = other_cameras[j].second;    // feature在imu的左目的像素坐标
-//
-//                                    shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
-//                                            host_pixel_coord,
-//                                            other_pixel_coord
-//                                    ));
-//                                    edge_reproj->add_vertex(vertex_landmark);
-//                                    edge_reproj->add_vertex(host_imu_pose);
-//                                    edge_reproj->add_vertex(other_imu_pose);
-//                                    edge_reproj->add_vertex(_vertex_ext[other_camera_id]);
-//                                    _problem.add_edge(edge_reproj);
-//                                }
-//                            }
+                            // 当前imu
+                            auto &&curr_cameras = _imu_node->features_in_cameras[feature_id];
+                            auto &&curr_imu_pose = _imu_node->vertex_pose;
+
+                            // 遍历所有imu
+                            for (unsigned j = 0; j < curr_cameras.size(); ++j) {
+                                auto &&curr_camera_id = curr_cameras[j].first; // camera的id
+                                auto &&curr_pixel_coord = curr_cameras[j].second;    // feature在imu的左目的像素坐标
+
+                                shared_ptr<EdgeReprojection> edge_reproj(new EdgeReprojection (
+                                        host_pixel_coord,
+                                        curr_pixel_coord
+                                ));
+                                edge_reproj->add_vertex(vertex_landmark);
+                                edge_reproj->add_vertex(host_imu_pose);
+                                edge_reproj->add_vertex(curr_imu_pose);
+                                edge_reproj->add_vertex(_vertex_ext[curr_camera_id]);
+                                _problem.add_edge(edge_reproj);
+                            }
                         }
                     }
                 }
