@@ -158,9 +158,9 @@ namespace vins {
         /**@brief gyroscope measurement noise standard deviation*/
         constexpr static double _gyro_noise = 0.004;
         /**@brief accelerometer bias random walk noise standard deviation*/
-        constexpr static double _acc_random_walk = 0.00004;
+        constexpr static double _acc_random_walk = 0.001;
         /**@brief gyroscope bias random walk noise standard deviation*/
-        constexpr static double _gyro_random_walk = 2.0e-6;
+        constexpr static double _gyro_random_walk = 0.001;
     };
 }
 
