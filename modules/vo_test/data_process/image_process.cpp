@@ -336,7 +336,11 @@ namespace vins {
                     _state.ba = _imu_node->get_ba();
                     _state.bg = _imu_node->get_bg();
 
+                    std::cout << "q_est: " << _state.q.w() << ", " << _state.q.x() << ", " << _state.q.y() << ", " << _state.q.z()<< std::endl;
                     std::cout << "p_est: " << _state.p.transpose() << std::endl;
+                    std::cout << "v_est: " << _state.v.transpose() << std::endl;
+                    std::cout << "ba_est: " << _state.ba.transpose() << std::endl;
+                    std::cout << "bg_est: " << _state.bg.transpose() << std::endl;
                 }
             }
         } else {
@@ -351,7 +355,11 @@ namespace vins {
             _state.ba = _imu_node->get_ba();
             _state.bg = _imu_node->get_bg();
 
+            std::cout << "q_est: " << _state.q.w() << ", " << _state.q.x() << ", " << _state.q.y() << ", " << _state.q.z()<< std::endl;
             std::cout << "p_est: " << _state.p.transpose() << std::endl;
+            std::cout << "v_est: " << _state.v.transpose() << std::endl;
+            std::cout << "ba_est: " << _state.ba.transpose() << std::endl;
+            std::cout << "bg_est: " << _state.bg.transpose() << std::endl;
         }
 
         slide_window();
