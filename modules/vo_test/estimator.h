@@ -88,7 +88,7 @@ namespace vins {
 
         void problem_solve();
 
-        bool failure_detection();
+        bool failure_detection(unsigned int iteration=5);
 
         enum SolverFlag {
             INITIAL,

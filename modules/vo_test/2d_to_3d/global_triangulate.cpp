@@ -49,6 +49,10 @@ namespace vins {
                 continue;
             }
 
+            if (feature_it->second->is_outlier) {
+                continue;
+            }
+
             if (!feature_it->second->vertex_point3d) {
                 shared_ptr<VertexPoint3d> vertex_point3d(new VertexPoint3d);
                 feature_it->second->vertex_point3d = vertex_point3d;
@@ -110,22 +114,34 @@ namespace vins {
 //            Vec3 point {svd_V[0] / svd_V[3], svd_V[1] / svd_V[3], svd_V[2] / svd_V[3]};
 //            feature_it->second->vertex_point3d->set_parameters(point);
 
-            Mat33 ATA = A.transpose() * A;
-            Vec3 ATb = A.transpose() * b;
-            auto &&ATA_ldlt = ATA.ldlt();
-            Vec3 point = ATA_ldlt.solve(ATb);
-            feature_it->second->vertex_point3d->set_parameters(point);
+//            Mat33 ATA = A.transpose() * A;
+//            Vec3 ATb = A.transpose() * b;
+//            auto &&ATA_ldlt = ATA.ldlt();
+//            Vec3 point = ATA_ldlt.solve(ATb);
+
+            // QR分解求解最小二乘问题有更高的数值精度
+            auto && A_qr = A.fullPivHouseholderQr();
+            Vec3 point = A_qr.solve(b);
 
             // 检查深度
             Vec3 p_ci = r_wci.transpose() * (point - t_wci_w);
             if (p_ci.z() < 0.) {
                 feature_it->second->vertex_point3d = nullptr;
+                feature_it->second->is_outlier = true;
+                feature_it->second->is_triangulated = false;
                 continue;
             }
             Vec3 p_cj = r_wcj.transpose() * (point - t_wcj_w);
             if (p_cj.z() < 0.) {
                 feature_it->second->vertex_point3d = nullptr;
+                feature_it->second->is_outlier = true;
+                feature_it->second->is_triangulated = false;
+                continue;
             }
+
+            feature_it->second->vertex_point3d->set_parameters(point);
+            feature_it->second->is_outlier = false;
+            feature_it->second->is_triangulated = true;
         }
 
         std::cout << "global 2d_to_3d takes " << tri_t.toc() << " ms" << std::endl;
@@ -146,6 +162,10 @@ namespace vins {
         auto &&imu_deque = feature->imu_deque;
         unsigned long num_imu = imu_deque.size() + (is_in_current ? 1 : 0);
         if (num_imu < 2) {
+            return;
+        }
+
+        if (feature->is_outlier) {
             return;
         }
 
@@ -219,7 +239,70 @@ namespace vins {
         // 最小二乘计算世界坐标
         Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
         Vec3 point {svd_V[0] / svd_V[3], svd_V[1] / svd_V[3], svd_V[2] / svd_V[3]};
+
+        // 检查深度
+        for (unsigned long j = 0; j < imu_deque.size(); ++j) {
+            // imu_j的信息
+            auto &&imu_j = imu_deque[j];
+            auto &&j_pose = imu_j->vertex_pose;   // imu的位姿
+            auto &&j_feature_in_cameras = imu_j->features_in_cameras.find(feature->id());
+            if (j_feature_in_cameras == imu_j->features_in_cameras.end()) {
+                std::cout << "Error: feature not in features_in_cameras when running global_triangulate_feature" << std::endl;
+                continue;
+            }
+            auto &&j_cameras = j_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+            auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+//            auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+            Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+            Mat33 r_j {q_j.toRotationMatrix()};
+
+            Eigen::Vector3d t_wcj_w = p_j + r_j * _t_ic[j_camera_id];
+            Eigen::Matrix3d r_wcj = r_j * _q_ic[j_camera_id];
+
+            Vec3 p_cj = r_wcj.transpose() * (point - t_wcj_w);
+            if (p_cj.z() < 0.) {
+                feature->vertex_point3d = nullptr;
+                feature->is_outlier = true;
+                feature->is_triangulated = false;
+                return;
+            }
+        }
+        if (is_in_current) {
+            unsigned long j = imu_deque.size();
+
+            // imu_j的信息
+            auto &&j_pose = _imu_node->vertex_pose;   // imu的位姿
+            auto &&j_feature_in_cameras = _imu_node->features_in_cameras.find(feature->id());
+            if (j_feature_in_cameras == _imu_node->features_in_cameras.end()) {
+                std::cout << "Error: feature not in features_in_cameras when running global_triangulate_feature" << std::endl;
+            } else {
+                auto &&j_cameras = j_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+                auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+//                auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+                Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+                Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+                Mat33 r_j {q_j.toRotationMatrix()};
+
+                Eigen::Vector3d t_wcj_w = p_j + r_j * _t_ic[j_camera_id];
+                Eigen::Matrix3d r_wcj = r_j * _q_ic[j_camera_id];
+
+                Vec3 p_cj = r_wcj.transpose() * (point - t_wcj_w);
+                if (p_cj.z() < 0.) {
+                    feature->vertex_point3d = nullptr;
+                    feature->is_outlier = true;
+                    feature->is_triangulated = false;
+                    return;
+                }
+            }
+        }
+
+
         feature->vertex_point3d->set_parameters(point);
+        feature->is_triangulated = true;
+        feature->is_outlier = false;
 
         std::cout << "global 2d_to_3d takes " << tri_t.toc() << " ms" << std::endl;
     }

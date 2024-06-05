@@ -60,7 +60,9 @@ namespace vins {
 
             // pnp
             auto &&imu_j = _windows[j];
-            iter_pnp(imu_j, &q_wj, &t_wj);
+            if (!iter_pnp(imu_j, &q_wj, &t_wj)) {
+                return false;
+            }
 //            epnp(imu_j);
 //            mlpnp(imu_j);
 //            dltpnp(imu_j);
@@ -88,7 +90,9 @@ namespace vins {
 
             // pnp
             auto &&imu_j = _windows[j];
-            iter_pnp(imu_j, &q_wj, &t_wj);
+            if (!iter_pnp(imu_j, &q_wj, &t_wj)) {
+                return false;
+            }
 //            epnp(imu_j);
 //            mlpnp(imu_j);
 //            dltpnp(imu_j);

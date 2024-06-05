@@ -349,4 +349,45 @@ namespace vins {
             feature_node->imu_deque.push_newest(_imu_node);
         }
     }
+
+    bool Estimator::failure_detection(unsigned int iteration) {
+        for (auto &feature_it : _feature_map) {
+            if (feature_it.second->vertex_landmark->get_parameters()[0] < 0.) {
+                feature_it.second->is_outlier = true;
+            }
+        }
+
+//        double chi2_th = 3.841;
+//        unsigned int cnt_outlier, cnt_inlier;
+//        for (unsigned int i = 0; i < iteration; ++i) {
+//            cnt_outlier = 0;
+//            cnt_inlier = 0;
+//            for (const auto &edge : _problem.edges()) {
+//                if (edge.second->type_info() == "EdgeReprojection") {
+//                    if (edge.second->get_chi2() > chi2_th) {
+//                        ++cnt_outlier;
+//                    } else {
+//                        ++cnt_inlier;
+//                    }
+//                }
+//            }
+//
+//            double inlier_ratio = double(cnt_inlier) / double(cnt_outlier + cnt_inlier);
+//            if (inlier_ratio > 0.5) {
+//                break;
+//            } else {
+//                chi2_th *= 2.;
+//            }
+//        }
+//
+//        for (const auto &edge : _problem.edges()) {
+//            if (edge.second->type_info() == "EdgeReprojection") {
+//                if (edge.second->get_chi2() > chi2_th) {
+//                    edge.second->vertices()[0]->id()
+//                } else {
+//                    ++cnt_inlier;
+//                }
+//            }
+//        }
+    }
 }

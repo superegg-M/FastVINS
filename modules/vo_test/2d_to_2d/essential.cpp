@@ -264,16 +264,19 @@ namespace vins {
             Vec4 b;
             b << 0., 0., RTt[0] - RTt[2] * point_j->x(), RTt[1] - RTt[2] * point_j->y();
 
-            // TODO: 使用QR分解求解最小二乘问题，这样数值精度更加稳定
-            Mat33 ATA = A.transpose() * A;
-            Vec3 ATb = A.transpose() * b;
-            auto &&ATA_ldlt = ATA.ldlt();
-            if (ATA_ldlt.info() == Eigen::Success) {
-                p = ATA_ldlt.solve(ATb);
-                return true;
-            } else {
-                return false;
-            }
+//            Mat33 ATA = A.transpose() * A;
+//            Vec3 ATb = A.transpose() * b;
+//            auto &&ATA_ldlt = ATA.ldlt();
+//            if (ATA_ldlt.info() == Eigen::Success) {
+//                p = ATA_ldlt.solve(ATb);
+//                return true;
+//            } else {
+//                return false;
+//            }
+
+            // 使用QR分解求解最小二乘问题，这样数值精度更加稳定
+            p = A.fullPivHouseholderQr().solve(b);
+            return true;
         };
 
         auto tri_all_points = [&](const Mat33 &R, const Vec3 &t, vector<pair<bool, Vec3>> &points) -> unsigned long {
@@ -372,18 +375,24 @@ namespace vins {
         // 把三角化的结果赋值给landmark
         if (is_init_landmark) {
             for (unsigned long k = 0; k < num_points; ++k) {
+                auto &&feature_it = _feature_map.find(feature_ids[k]);
+                if (feature_it == _feature_map.end()) {
+                    continue;
+                }
+
                 // 没有outliers以及深度为正的点才会进行赋值
                 if (!is_outliers[k] && points_w[which_case][k].first) {
-                    auto &&feature_it = _feature_map.find(feature_ids[k]);
-                    if (feature_it == _feature_map.end()) {
-                        continue;
-                    }
-
                     // 转到imu系
                     Vec3 p = _q_ic[0] * points_w[which_case][k].second + _t_ic[0];
 
                     feature_it->second->vertex_point3d = std::make_shared<VertexPoint3d>();
                     feature_it->second->vertex_point3d->set_parameters(p);
+
+                    feature_it->second->is_triangulated = true;
+                    feature_it->second->is_outlier = false;
+                } else {
+                    feature_it->second->is_triangulated = false;
+                    feature_it->second->is_outlier = true;
                 }
             }
         }

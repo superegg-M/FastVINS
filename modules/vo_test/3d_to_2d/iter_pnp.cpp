@@ -20,14 +20,18 @@ namespace vins {
     using namespace std;
 
     bool Estimator::iter_pnp(ImuNode *imu_i, Qd *q_wi_init, Vec3 *t_wi_init) {
+        constexpr static double th_e2 = 3.841;
+
         constexpr static unsigned int num_iters = 5;
         constexpr static unsigned int num_fix = 5;
         TicToc pnp_t;
 
         // 读取3d, 2d点
         vector<Vec3> p_w;
+        vector<unsigned long> p_w_id;
         vector<Vec2> uv;
         p_w.reserve(imu_i->features_in_cameras.size());
+        p_w_id.reserve(imu_i->features_in_cameras.size());
         uv.reserve(imu_i->features_in_cameras.size());
         for (auto &feature_in_cameras : imu_i->features_in_cameras) {
             auto &&feature_it = _feature_map.find(feature_in_cameras.first);
@@ -35,8 +39,14 @@ namespace vins {
                 std::cout << "Error: feature not in feature_map when running pnp" << std::endl;
                 continue;
             }
+
+            if (feature_it->second->is_outlier) {
+                continue;
+            }
+
             if (feature_it->second->vertex_point3d) {
                 p_w.emplace_back(feature_it->second->vertex_point3d->get_parameters());
+                p_w_id.emplace_back(feature_it->first);
                 uv.emplace_back(feature_in_cameras.second[0].second.x(), feature_in_cameras.second[0].second.y());
             }
         }
@@ -55,6 +65,7 @@ namespace vins {
             t_wi.setZero();
         }
 
+        // TODO: 应该使用RANSAC
         for (unsigned int n = 0; n < num_iters; ++n) {
             Mat66 H;
             Vec6 b;
@@ -118,6 +129,32 @@ namespace vins {
             } else {
                 return false;
             }
+        }
+
+        // 判断landmark是否outlier
+        unsigned long outlier_count = 0;
+        for (unsigned long k = 0; k < p_w.size(); ++k) {
+            auto id = p_w_id[k];
+
+            Vec3 p_imu_i = q_wi.inverse() * (p_w[k] - t_wi);
+            Vec3 p_camera_i = _q_ic[0].inverse() * (p_imu_i - _t_ic[0]);
+            double inv_depth_i = 1. / p_camera_i.z();
+            // 逆深度
+            if (inv_depth_i < 0.) {
+                _feature_map[id]->is_outlier = true;
+            }
+
+            // 重投影误差
+            Vec2 e = (p_camera_i * inv_depth_i).head<2>() - uv[k];
+            double e2 = e.squaredNorm();
+            if (e2 > th_e2) {
+                _feature_map[id]->is_outlier = true;
+                ++outlier_count;
+            }
+        }
+
+        if (outlier_count * 100 > p_w.size() * 30) {
+            return false;
         }
 
         Vec7 pose;

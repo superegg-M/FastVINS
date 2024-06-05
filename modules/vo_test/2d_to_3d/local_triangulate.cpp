@@ -47,6 +47,10 @@ namespace vins {
                 continue;
             }
 
+            if (feature_it->second->is_outlier) {
+                continue;
+            }
+
             if (!feature_it->second->vertex_landmark) {
                 shared_ptr<VertexInverseDepth> vertex_inverse_depth(new VertexInverseDepth);
                 feature_it->second->vertex_landmark = vertex_inverse_depth;
@@ -91,17 +95,25 @@ namespace vins {
             // 最小二乘计算深度
             Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
             Vec1 inverse_depth {svd_V[3] / svd_V[2]};
-            feature_it->second->vertex_landmark->set_parameters(inverse_depth);
 
             // 检查深度
             if (inverse_depth[0] < 0.) {
                 feature_it->second->vertex_landmark = nullptr;
+                feature_it->second->is_triangulated = false;
+                feature_it->second->is_outlier = true;
                 continue;
             }
             Vec3 p_cj = r_wcj.transpose() * (r_wci * i_pixel_coord / inverse_depth[0] + t_wci_w - t_wcj_w);
             if (p_cj.z() < 0.) {
                 feature_it->second->vertex_landmark = nullptr;
+                feature_it->second->is_triangulated = false;
+                feature_it->second->is_outlier = true;
+                continue;
             }
+
+            feature_it->second->vertex_landmark->set_parameters(inverse_depth);
+            feature_it->second->is_triangulated = true;
+            feature_it->second->is_outlier = false;
         }
     }
 
@@ -216,6 +228,72 @@ namespace vins {
         // 最小二乘计算深度
         Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
         Vec1 inverse_depth {svd_V[3] / svd_V[2]};
+
+        // 检查深度
+        if (inverse_depth[0] < 0.) {
+            feature->vertex_landmark = nullptr;
+            feature->is_triangulated = false;
+            feature->is_outlier = true;
+            return;
+        }
+        for (unsigned long j = 1; j < imu_deque.size(); ++j) {
+            // imu_j的信息
+            auto &&imu_j = imu_deque[j];
+            auto &&j_pose = imu_j->vertex_pose;   // imu的位姿
+            auto &&j_feature_in_cameras = imu_j->features_in_cameras.find(feature->id());
+            if (j_feature_in_cameras == imu_j->features_in_cameras.end()) {
+                std::cout << "Error: feature not in features_in_cameras when running global_triangulate_feature" << std::endl;
+                continue;
+            }
+            auto &&j_cameras = j_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+            auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+//            auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+            Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+            Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+            Mat33 r_j {q_j.toRotationMatrix()};
+
+            Eigen::Vector3d t_wcj_w = p_j + r_j * _t_ic[j_camera_id];
+            Eigen::Matrix3d r_wcj = r_j * _q_ic[j_camera_id];
+
+            Vec3 p_cj = r_wcj.transpose() * (r_wci * i_pixel_coord / inverse_depth[0] + t_wci_w - t_wcj_w);
+            if (p_cj.z() < 0.) {
+                feature->vertex_landmark = nullptr;
+                feature->is_triangulated = false;
+                feature->is_outlier = true;
+                return;
+            }
+        }
+        if (is_in_current) {
+            // imu_j的信息
+            auto &&j_pose = _imu_node->vertex_pose;   // imu的位姿
+            auto &&j_feature_in_cameras = _imu_node->features_in_cameras.find(feature->id());
+            if (j_feature_in_cameras == _imu_node->features_in_cameras.end()) {
+                std::cout << "Error: feature not in features_in_cameras when running global_triangulate_feature" << std::endl;
+            } else {
+                auto &&j_cameras = j_feature_in_cameras->second;    // imu中，与feature对应的相机信息
+                auto &&j_camera_id = j_cameras[0].first;  // 左目的id
+//                auto &&j_pixel_coord = j_cameras[0].second;    // feature在imu的左目的像素坐标
+
+                Vec3 p_j {j_pose->get_parameters()(0), j_pose->get_parameters()(1), j_pose->get_parameters()(2)};
+                Qd q_j {j_pose->get_parameters()(6), j_pose->get_parameters()(3), j_pose->get_parameters()(4), j_pose->get_parameters()(5)};
+                Mat33 r_j {q_j.toRotationMatrix()};
+
+                Eigen::Vector3d t_wcj_w = p_j + r_j * _t_ic[j_camera_id];
+                Eigen::Matrix3d r_wcj = r_j * _q_ic[j_camera_id];
+
+                Vec3 p_cj = r_wcj.transpose() * (r_wci * i_pixel_coord / inverse_depth[0] + t_wci_w - t_wcj_w);
+                if (p_cj.z() < 0.) {
+                    feature->vertex_landmark = nullptr;
+                    feature->is_triangulated = false;
+                    feature->is_outlier = true;
+                    return;
+                }
+            }
+        }
+
         feature->vertex_landmark->set_parameters(inverse_depth);
+        feature->is_triangulated = true;
+        feature->is_outlier = false;
     }
 }

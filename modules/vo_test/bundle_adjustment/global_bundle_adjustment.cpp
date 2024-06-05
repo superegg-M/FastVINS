@@ -19,6 +19,8 @@ namespace vins {
     using namespace std;
 
     void Estimator::global_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses) {
+        std::unordered_map<unsigned long, unsigned long> from_vertex_to_feature(_feature_map.size());
+
         // VO优化
         ProblemSLAM problem;
 
@@ -44,8 +46,14 @@ namespace vins {
             auto &&feature_id = feature_it.first;
             auto &&feature_node = feature_it.second;
 
+            if (feature_node->is_outlier) {
+                continue;
+            }
+
             // 只有进行了初始化的特征点才参与计算
             if (feature_node->vertex_point3d) {
+                from_vertex_to_feature.emplace(feature_node->vertex_point3d->id(), feature_id);
+
                 auto &&imu_deque = feature_node->imu_deque;
                 auto &&curr_feature_in_cameras = _imu_node->features_in_cameras.find(feature_id);
                 bool is_feature_in_curr_imu = curr_feature_in_cameras != _imu_node->features_in_cameras.end();
@@ -94,6 +102,13 @@ namespace vins {
 
         // 优化
         problem.solve(10);
+
+        // 检查outlier
+        for (const auto &edge : problem.edges()) {
+            if (edge.second->get_chi2() > 3.) {
+                _feature_map[from_vertex_to_feature[edge.second->vertices()[0]->id()]]->is_outlier = true;
+            }
+        }
 
         // 解锁imu
         if (fixed_poses) {
