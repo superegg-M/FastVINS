@@ -3,6 +3,7 @@
 //
 
 #include "problem_slam.h"
+#include "tic_toc/tic_toc.h"
 #include <iostream>
 
 // #define USE_PCG_SOLVER
@@ -274,6 +275,7 @@ namespace graph_optimization {
         ulong reserve_size = _ordering_poses;
         ulong marg_size = _ordering_landmarks;
 
+        TicToc t_schur;
         // 由于叠加了lambda, 所以能够保证Hll可逆
         MatXX Hll = _hessian.block(reserve_size, reserve_size, marg_size, marg_size);
         for (ulong i = 0; i < marg_size; ++i) {   // LM Method
@@ -283,6 +285,7 @@ namespace graph_optimization {
                 Hll(i, i) = _diag_lambda(i + reserve_size);
             }
         }
+
 //        MatXX Hpl = _hessian.block(0, reserve_size, reserve_size, marg_size);
         MatXX Hlp = _hessian.block(reserve_size, 0, marg_size, reserve_size);
 //        VecX bpp = _b.segment(0, reserve_size);
@@ -305,9 +308,21 @@ namespace graph_optimization {
             }
         }
 
+//        std::cout << "_ordering_poses = " << _ordering_poses << std::endl;
+//        std::cout << "_ordering_landmarks = " << _ordering_landmarks << std::endl;
+//        std::cout << "Hlp: " << "(" <<  Hlp.rows() << ", " << Hlp.cols() << ")" << std::endl;
+
         // (Hpp - Hpl * Hll^-1 * Hlp) * dxp = bp - Hpl * Hll^-1 * bl
         // 这里即使叠加了lambda, 也有可能因为数值精度的问题而导致 _h_pp_schur 不可逆
-        _h_pp_schur = _hessian.block(0, 0, reserve_size, reserve_size) - Hlp.transpose() * temp_H;
+        _h_pp_schur = _hessian.block(0, 0, reserve_size, reserve_size);
+        for (ulong i = 0; i < reserve_size; ++i) {
+            _h_pp_schur(i, i) -= Hlp.col(i).dot(temp_H.col(i));
+            for (ulong j = i + 1; j < reserve_size; ++j) {
+                _h_pp_schur(i, j) -= Hlp.col(i).dot(temp_H.col(j));
+                _h_pp_schur(j, i) = _h_pp_schur(i, j);
+            }
+        }
+        _t_schur_cost += t_schur.toc();
         for (ulong i = 0; i < _ordering_poses; ++i) {
             // _h_pp_schur(i, i) += _current_lambda;    // LM Method
             _h_pp_schur(i, i) += _diag_lambda(i);
@@ -315,6 +330,7 @@ namespace graph_optimization {
         _b_pp_schur = _b.segment(0, reserve_size) - Hlp.transpose() * temp_b;
 
         // Solve: Hpp * delta_x = bpp
+        TicToc t_ldlt;
         VecX delta_x_pp(VecX::Zero(reserve_size));
 #ifdef USE_PCG_SOLVER
         auto n_pcg = _h_pp_schur.rows();                       // 迭代次数
@@ -332,6 +348,7 @@ namespace graph_optimization {
         VecX delta_x_ll(marg_size);
         delta_x_ll = temp_b - temp_H * delta_x_pp;
         delta_x.tail(marg_size) = delta_x_ll;
+        _t_ldlt_cost += t_ldlt.toc();
 
         return true;
     }

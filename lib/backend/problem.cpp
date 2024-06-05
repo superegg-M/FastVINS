@@ -89,6 +89,8 @@ namespace graph_optimization {
         }
 
         TicToc t_solve;
+        _t_schur_cost = 0.;
+        _t_ldlt_cost = 0.;
         _t_hessian_cost = 0.;
         _t_jacobian_cost = 0.;
         _t_chi2_cost = 0;
@@ -119,6 +121,8 @@ namespace graph_optimization {
         }
 
         std::cout << "problem solve cost: " << t_solve.toc() << " ms" << std::endl;
+        std::cout << "schur cost: " << _t_schur_cost << " ms" << std::endl;
+        std::cout << "ldlt cost: " << _t_ldlt_cost << " ms" << std::endl;
         std::cout << "update_hessian cost: " << _t_hessian_cost << " ms" << std::endl;
         std::cout << "update_jacobian cost: " << _t_jacobian_cost << " ms" << std::endl;
         std::cout << "update_chi2 cost: " << _t_chi2_cost << " ms" << std::endl;

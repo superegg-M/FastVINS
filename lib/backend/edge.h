@@ -20,8 +20,8 @@ namespace graph_optimization {
         /**
          * 构造函数，会自动化配雅可比的空间
          * @param residual_dimension 残差维度
-         * @param num_verticies 顶点数量
-         * @param verticies_types 顶点类型名称，可以不给，不给的话check中不会检查
+         * @param num_vertices 顶点数量
+         * @param vertices_types 顶点类型名称，可以不给，不给的话check中不会检查
          */
         explicit Edge(unsigned long residual_dimension, unsigned long num_vertices,
                       const std::vector<std::string> &vertices_types = std::vector<std::string>(),

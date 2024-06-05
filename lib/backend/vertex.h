@@ -16,7 +16,7 @@ namespace graph_optimization {
         /*!
          * 构造函数
          * @param num_dimension - 顶点自身维度
-         * @param local_dimension - 本地参数化维度, 为-1时认为与本身维度一样
+         * @param local_dimension - 本地参数化维度, 为0时认为与本身维度一样
          */
         explicit Vertex(unsigned long num_dimension, unsigned long local_dimension=0);
 

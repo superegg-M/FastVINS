@@ -107,6 +107,8 @@ namespace graph_optimization {
         double _t_chi2_cost = 0.;
         double _t_jacobian_cost = 0.;
         double _t_hessian_cost = 0.;
+        double _t_ldlt_cost = 0.;
+        double _t_schur_cost = 0.;
         double _t_PCG_solve_cost = 0.;
 
         ulong _ordering_generic = 0;
