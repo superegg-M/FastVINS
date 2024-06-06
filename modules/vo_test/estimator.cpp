@@ -74,6 +74,8 @@ namespace vins {
             // 解锁最老的pose
             _windows.oldest()->vertex_pose->set_fixed(false);
         }
+
+        failure_detection();
     }
 
     void Estimator::slide_window() {
@@ -348,14 +350,38 @@ namespace vins {
             auto &&feature_node = feature_it->second;
             feature_node->imu_deque.push_newest(_imu_node);
         }
+
+        auto margin_cost = t_margin.toc();
+        std::cout << "margin_cost = " << margin_cost << std::endl;
     }
 
     bool Estimator::failure_detection(unsigned int iteration) {
+        std::vector<unsigned long> id_delete;
+        id_delete.reserve(_feature_map.size());
         for (auto &feature_it : _feature_map) {
-            if (feature_it.second->vertex_landmark->get_parameters()[0] < 0.) {
+            if (feature_it.second->vertex_landmark && feature_it.second->vertex_landmark->get_parameters()[0] < 0.) {
                 feature_it.second->is_outlier = true;
             }
+
+            if (feature_it.second->is_outlier) {
+                id_delete.emplace_back(feature_it.first);
+            }
         }
+
+        for (auto &id : id_delete) {
+            if (_feature_map[id]->vertex_landmark) {
+                _problem.remove_vertex(_feature_map[id]->vertex_landmark);
+            }
+            for (unsigned long i = 0; i < _windows.size(); ++i) {
+                _windows[i]->features_in_cameras.erase(id);
+            }
+            _imu_node->features_in_cameras.erase(id);
+            _feature_map.erase(id);
+
+            std::cout << "delete landmark: " << id << std::endl;
+        }
+
+        return true;
 
 //        double chi2_th = 3.841;
 //        unsigned int cnt_outlier, cnt_inlier;

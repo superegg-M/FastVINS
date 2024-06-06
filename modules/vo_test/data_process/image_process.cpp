@@ -20,6 +20,8 @@ namespace vins {
 
     void Estimator::process_image(const unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> &image, double header) {
         std::cout << "_windows.size() = " << _windows.size() << std::endl;
+        TicToc t_process;
+
         // 创建imu节点, 需要在marg后加入到windows中
         _imu_node = new ImuNode {_imu_integration};
 
@@ -313,6 +315,9 @@ namespace vins {
         } else {
             marginalization_flag = MARGIN_SECOND_NEW;
         }
+
+        auto process_cost = t_process.toc();
+        std::cout << "process_cost = " << process_cost << std::endl;
 //        std::cout << "5" << std::endl;
 //        std::cout << "_windows.size() = " << _windows.size() << std::endl;
 //        marginalization_flag = MARGIN_OLD;
