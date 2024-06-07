@@ -239,7 +239,7 @@ namespace vins {
             pose(2) = p.z();
 
             Qd q {pose(6), pose(3), pose(4), pose(5)};
-            q = q_wb0 * q;
+            q = (q_wb0 * q).normalized();
             pose(3) = q.x();
             pose(4) = q.y();
             pose(5) = q.z();
@@ -251,6 +251,14 @@ namespace vins {
             motion << v[0], v[1], v[2],
                     vertex_ba->get_parameters()[0], vertex_ba->get_parameters()[1],vertex_ba->get_parameters()[2],
                     vertex_bg->get_parameters()[0], vertex_bg->get_parameters()[1],vertex_bg->get_parameters()[2];
+        }
+
+        // 把尺度补充到逆深度中
+        for (auto &feature_it : _feature_map) {
+            if (feature_it.second->vertex_landmark) {
+                feature_it.second->vertex_landmark->parameters() /= scale_est;
+//                std::cout << "depth = " << 1. / feature_it.second->vertex_landmark->parameters()[0] << std::endl;
+            }
         }
 
         std::cout << "nonlinear scale = " << scale_est << std::endl;
