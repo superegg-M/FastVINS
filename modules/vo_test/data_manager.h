@@ -255,11 +255,11 @@ namespace vins {
 
     class State {
     public:
-        Vec3 p {};
-        Qd q {};
-        Vec3 v {};
-        Vec3 ba {};
-        Vec3 bg {};
+        Vec3 p = Vec3::Zero();
+        Qd q = Qd::Identity();
+        Vec3 v = Vec3::Zero();
+        Vec3 ba = Vec3::Zero();
+        Vec3 bg = Vec3::Zero();
     };
 }
 
