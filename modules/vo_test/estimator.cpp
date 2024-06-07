@@ -44,6 +44,13 @@ namespace vins {
 
         if (structure_from_motion()) {
             std::cout << "done structure_from_motion" << std::endl;
+
+            // 移除outlier的landmarks
+            remove_outlier_landmarks();
+
+            // 移除为三角化的landmarks
+            remove_untriangulated_landmarks();
+
             if (align_visual_to_imu()) {
                 std::cout << "done align_visual_to_imu" << std::endl;
 
@@ -53,6 +60,12 @@ namespace vins {
                 _state.v = _imu_node->get_v();
                 _state.ba = _imu_node->get_ba();
                 _state.bg = _imu_node->get_bg();
+
+                std::cout << "q_est: " << _state.q.w() << ", " << _state.q.x() << ", " << _state.q.y() << ", " << _state.q.z()<< std::endl;
+                std::cout << "p_est: " << _state.p.transpose() << std::endl;
+                std::cout << "v_est: " << _state.v.transpose() << std::endl;
+                std::cout << "ba_est: " << _state.ba.transpose() << std::endl;
+                std::cout << "bg_est: " << _state.bg.transpose() << std::endl;
 
                 return true;
             }
@@ -75,7 +88,7 @@ namespace vins {
             _windows.oldest()->vertex_pose->set_fixed(false);
         }
 
-        failure_detection();
+        remove_outlier_landmarks();
     }
 
     void Estimator::slide_window() {
@@ -355,7 +368,7 @@ namespace vins {
         std::cout << "margin_cost = " << margin_cost << std::endl;
     }
 
-    bool Estimator::failure_detection(unsigned int iteration) {
+    bool Estimator::remove_outlier_landmarks(unsigned int iteration) {
         std::vector<unsigned long> id_delete;
         id_delete.reserve(_feature_map.size());
         for (auto &feature_it : _feature_map) {
@@ -378,7 +391,7 @@ namespace vins {
             _imu_node->features_in_cameras.erase(id);
             _feature_map.erase(id);
 
-            std::cout << "delete landmark: " << id << std::endl;
+            std::cout << "remove outlier landmark: " << id << std::endl;
         }
 
         return true;
@@ -415,5 +428,28 @@ namespace vins {
 //                }
 //            }
 //        }
+    }
+
+    bool Estimator::remove_untriangulated_landmarks() {
+        std::vector<unsigned long> id_delete;
+        id_delete.reserve(_feature_map.size());
+        for (auto &feature_it : _feature_map) {
+            if (feature_it.second->vertex_landmark && !feature_it.second->is_triangulated) {
+                id_delete.emplace_back(feature_it.first);
+            }
+        }
+
+        for (auto &id : id_delete) {
+            _problem.remove_vertex(_feature_map[id]->vertex_landmark);
+            for (unsigned long i = 0; i < _windows.size(); ++i) {
+                _windows[i]->features_in_cameras.erase(id);
+            }
+            _imu_node->features_in_cameras.erase(id);
+            _feature_map.erase(id);
+
+            std::cout << "remove untriangulated landmark: " << id << std::endl;
+        }
+
+        return true;
     }
 }
