@@ -27,14 +27,17 @@ public:
         _bg.setZero();
 
         // landmarks生成
-        double deg2rad = EIGEN_PI / 180.;
+        double deg2rad = double(EIGEN_PI) / 180.;
+        std::uniform_real_distribution<double> r_rand(0., 5.);
+        std::uniform_real_distribution<double> z_rand(-5., 5.);
         for (int i = 0; i < 360; ++i) {
             double angle = double(i % 360) * deg2rad;
             double cos_ang = cos(angle);
             double sin_ang = sin(angle);
             // 轴向
             for (int j = 0; j < 5; ++j) {
-                double l = r + double(j);
+//                double l = r + double(j);
+                double l = r + r_rand(_generator);
                 for (int k = 0; k < 5; ++k) {
                     /*
                      * 把 p = (0, l, k), 旋转R
@@ -43,9 +46,11 @@ public:
                      *      sin(theta) cos(theta) 0
                      *      0 0 1]
                      * */
-                    landmarks[i][j][k] = {-l * sin_ang, l * cos_ang, double(k) - 2.};
+//                    landmarks[i][j][k] = {-l * cos_ang, -l * sin_ang, double(k) - 2.};
+                    landmarks[i][j][k] = {-l * cos_ang, -l * sin_ang, z_rand(_generator)};
                 }
             }
+//            std::cout << "landmarks[i][j][k] = " << landmarks[i][0][0].transpose() << std::endl;
         }
     }
 
@@ -81,24 +86,28 @@ public:
     }
 
     unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> get_landmarks_per_pose(double theta, const Vec3 &t_wi) {
-        static double rad2deg = 180. / EIGEN_PI;
+        static double rad2deg = 180. / double(EIGEN_PI);
         Qd q_wi {cos(0.5 * theta), 0., 0., sin(0.5 * theta)};
 
         Vec3 p_i, p_c;
         Vec7 f;
         unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> landmarks_map;
 
-        int ang = (int(theta * rad2deg) + 90 + 360) % 360;
-        for (int i = -10; i <= 10; ++i) {
+        int ang = (int(theta * rad2deg) + 360) % 360;
+        for (int i = -60; i <= 60; ++i) {
             int index = (ang + i + 360) % 360;
-            for (int j = 0; j < 5; ++j) {
+            for (int j = 0; j < 1; ++j) {
                 for (int k = 0; k < 5; ++k) {
                     p_i = q_wi.inverse() * (landmarks[index][j][k] - t_wi);
                     p_c = q_ic.inverse() * (p_i - t_ic);
                     f << p_c.x() / p_c.z(), p_c.y() / p_c.z(), 1., 0., 0., 0., 0.;
                     landmarks_map[get_landmark_id(index, j, k)].emplace_back(0, f);
+//                    std::cout << "p_c = " << p_c.transpose() << std::endl;
                 }
             }
+//            if (i == 0) {
+//                std::cout << "p_i = " << p_i.transpose() << std::endl;
+//            }
         }
 
         return landmarks_map;
@@ -112,8 +121,8 @@ public:
     vector<Vec3> _w_buff;
 
 public:
-    Vec3 _ba {0.1, 0.1, 0.1};
-    Vec3 _bg {0.01, 0.01, 0.01};
+    Vec3 _ba {0., 0., 0.};
+    Vec3 _bg {0.0, 0.0, 0.0};
 
 public:
     double _dt;
@@ -122,9 +131,10 @@ public:
 
 public:
     Vec3 landmarks[360][5][5];
+    std::default_random_engine _generator;
 
 public:
-    Qd q_ic {cos(-0.5 * EIGEN_PI * 0.5), 0., sin(-0.5 * EIGEN_PI * 0.5), 0.};
+    Qd q_ic {cos(-0.5 * double(EIGEN_PI) * 0.5), 0., sin(-0.5 * double(EIGEN_PI) * 0.5), 0.};
     Vec3 t_ic {0., 0., 0.};
 };
 
