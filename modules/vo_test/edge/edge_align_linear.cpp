@@ -16,7 +16,7 @@ namespace graph_optimization {
     }
 
     void EdgeAlignLinear::compute_residual() {
-        double scale = _vertices[0]->get_parameters()[0];
+        double scale = _vertices[0]->get_parameters()[0] / 100.;
         Vec3 g_b0 = _vertices[1]->get_parameters();
         Vec3 v_i = _vertices[2]->get_parameters();
         Vec3 v_j = _vertices[3]->get_parameters();
@@ -55,7 +55,7 @@ namespace graph_optimization {
 
         // jacobian[0]: 6x1, (e_p, e_v) x (scale)
         _jacobians[0] = Eigen::Matrix<double, 6, 1>::Zero();
-        _jacobians[0].block<3, 1>(0, 0) = R_0i_T * _t_ij;
+        _jacobians[0].block<3, 1>(0, 0) = R_0i_T * _t_ij / 100.;
 
         // jacobian[1]: 6x2, (e_p, e_v) x (g_b0)
         _jacobians[1] = Eigen::Matrix<double, 6, 3>::Zero();
