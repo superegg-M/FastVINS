@@ -88,7 +88,8 @@ namespace vins {
 
         void problem_solve();
 
-        bool failure_detection(unsigned int iteration=5);
+        bool remove_outlier_landmarks(unsigned int iteration=5);
+        bool remove_untriangulated_landmarks();
 
         enum SolverFlag {
             INITIAL,
@@ -124,8 +125,8 @@ namespace vins {
         vector<Vec3> _t_ic{NUM_OF_CAM};
 
         IMUIntegration *_imu_integration {nullptr};
-        Vec3 _acc_latest {};
-        Vec3 _gyro_latest {};
+        Vec3 _acc_latest = Vec3::Zero();
+        Vec3 _gyro_latest = Vec3::Zero();
 
         unordered_map<unsigned long, FeatureNode*> _feature_map;
         unordered_map<unsigned long, FrameNode*> _feature_based_frame;
