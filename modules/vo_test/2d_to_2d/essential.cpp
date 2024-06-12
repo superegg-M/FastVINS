@@ -226,6 +226,7 @@ namespace vins {
 
         // outlier的点过多
         if (10 * num_outliers > 5 * num_points) {
+            std::cout << "10 * num_outliers > 5 * num_points" << std::endl;
             return false;
         }
 
@@ -234,6 +235,13 @@ namespace vins {
         Eigen::JacobiSVD<Mat33> E_svd(best_E, Eigen::ComputeFullU | Eigen::ComputeFullV);
         Mat33 V = E_svd.matrixV();
         Mat33 U1 = E_svd.matrixU();
+
+        if (V.determinant() < 0.) {
+            V *= -1.;
+        }
+        if (U1.determinant() < 0.) {
+            U1 *= -1.;
+        }
 
         Vec3 t1 = U1.col(2);
         t1 = t1 / t1.norm();
@@ -246,12 +254,6 @@ namespace vins {
 
         Mat33 R1 = U1 * V.transpose();
         Mat33 R2 = U2 * V.transpose();
-        if (R1.determinant() < 0.) {
-            R1 = -R1;
-        }
-        if (R2.determinant() < 0.) {
-            R2 = -R2;
-        }
 
         // 进行三角化，通过深度筛选出正确的R, t
         auto tri = [&](const Vec3 *point_i, const Vec3 *point_j, const Mat33 &R, const Vec3 &t, Vec3 &p) -> bool {
@@ -292,12 +294,14 @@ namespace vins {
                 }
 
                 points[k].first = points[k].second[2] > 0.;
+//                std::cout << "points[k].second[2] = " << points[k].second[2] << std::endl;
                 if (!points[k].first) {
                     continue;
                 }
 
                 Vec3 pj = R.transpose() * (points[k].second - t);
                 points[k].first = pj[2] > 0.;
+//                std::cout << "pj[2] = " << pj[2] << std::endl;
                 if (!points[k].first) {
                     continue;
                 }
@@ -323,6 +327,11 @@ namespace vins {
         unsigned long min_succeed_points = 9 * (num_points - num_outliers) / 10; // 至少要超过90%的点成功被三角化
 
         if (max_succeed_points < min_succeed_points) {
+            std::cout << "max_succeed_points = " << max_succeed_points << ", min_succeed_points = " << min_succeed_points << std::endl;
+            std::cout << "succeed_points[0] = " << succeed_points[0] << std::endl;
+            std::cout << "succeed_points[1] = " << succeed_points[1] << std::endl;
+            std::cout << "succeed_points[2] = " << succeed_points[2] << std::endl;
+            std::cout << "succeed_points[3] = " << succeed_points[3] << std::endl;
             return false;
         }
 
@@ -341,6 +350,7 @@ namespace vins {
             ++num_similar;
         }
         if (num_similar > 1) {  // 不允许超过1组解使得70%的点都能三角化
+            std::cout << "num_similar > 1" << std::endl;
             return false;
         }
 
