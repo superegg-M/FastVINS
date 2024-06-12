@@ -22,7 +22,7 @@ using namespace std;
 
 class Simulator {
 public:
-    explicit Simulator(double dt, double w=0.5, double r=10.) : _dt(dt), _w(w), _r(r) {
+    explicit Simulator(double dt, double w=0.5, double r=20.) : _dt(dt), _w(w), _r(r) {
         _ba.setZero();
         _bg.setZero();
 
@@ -36,9 +36,9 @@ public:
             double sin_ang = sin(angle);
             // 轴向
             for (int j = 0; j < 5; ++j) {
-//                double l = r + double(j);
-                double l = r + r_rand(_generator);
-                for (int k = 0; k < 5; ++k) {
+                double l = r + double(j);
+//                double l = 0.5 * r + r_rand(_generator);
+                for (int k = 0; k < 10; ++k) {
                     /*
                      * 把 p = (0, l, k), 旋转R
                      * 其中,
@@ -46,8 +46,8 @@ public:
                      *      sin(theta) cos(theta) 0
                      *      0 0 1]
                      * */
-//                    landmarks[i][j][k] = {-l * cos_ang, -l * sin_ang, double(k) - 2.};
-                    landmarks[i][j][k] = {-l * cos_ang, -l * sin_ang, z_rand(_generator)};
+                    landmarks[i][j][k] = {-l * cos_ang, -l * sin_ang, double(k) - 5.};
+//                    landmarks[i][j][k] = {-l * cos_ang, -l * sin_ang, z_rand(_generator)};
                 }
             }
 //            std::cout << "landmarks[i][j][k] = " << landmarks[i][0][0].transpose() << std::endl;
@@ -94,9 +94,11 @@ public:
         unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> landmarks_map;
 
         int ang = (int(theta * rad2deg) + 360) % 360;
-        for (int i = -60; i <= 60; ++i) {
+//        ang /= 5;
+//        ang *= 5;
+        for (int i = -10; i <= 10; i += 1) {
             int index = (ang + i + 360) % 360;
-            for (int j = 0; j < 1; ++j) {
+            for (int j = 0; j < 5; ++j) {
                 for (int k = 0; k < 5; ++k) {
                     p_i = q_wi.inverse() * (landmarks[index][j][k] - t_wi);
                     p_c = q_ic.inverse() * (p_i - t_ic);
@@ -130,7 +132,7 @@ public:
     double _r;
 
 public:
-    Vec3 landmarks[360][5][5];
+    Vec3 landmarks[360][5][10];
     std::default_random_engine _generator;
 
 public:
