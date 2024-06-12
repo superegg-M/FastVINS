@@ -146,6 +146,8 @@ namespace vins {
             }
         }
 
+        std::cout << "_feature_map.size() = " << _feature_map.size() << std::endl;
+
         // 总体的优化
         // 固定住不参与优化的点
         vector<shared_ptr<VertexPose>> fixed_poses;
@@ -169,7 +171,7 @@ namespace vins {
 //        // Local Bundle Adjustment
 //        local_bundle_adjustment(&fixed_poses);
 
-        failure_detection();
+        remove_outlier_landmarks();
 
         for (unsigned long i = 0; i < _windows.size(); ++i) {
             auto &&pose = _windows[i]->vertex_pose->get_parameters();
