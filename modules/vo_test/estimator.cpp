@@ -26,7 +26,8 @@ namespace vins {
         _q_ic.resize(NUM_OF_CAM);
         _t_ic.resize(NUM_OF_CAM);
         _vertex_ext.resize(NUM_OF_CAM);
-        _q_ic[0] = {cos(-0.5 * double(EIGEN_PI) * 0.5), 0., sin(-0.5 * double(EIGEN_PI) * 0.5), 0.};
+//        _q_ic[0] = {cos(-0.5 * double(EIGEN_PI) * 0.5), 0., sin(-0.5 * double(EIGEN_PI) * 0.5), 0.};
+        _q_ic[0] = {cos(-0.5 * double(EIGEN_PI) * 0.5), sin(-0.5 * double(EIGEN_PI) * 0.5), 0., 0.};
         _t_ic[0] = {0., 0., 0.};
         Vec7 pose;
         pose << _t_ic[0].x(), _t_ic[0].y(), _t_ic[0].z(), _q_ic[0].x(), _q_ic[0].y(), _q_ic[0].z(), _q_ic[0].w();
@@ -82,7 +83,7 @@ namespace vins {
             _windows.oldest()->vertex_pose->set_fixed(true);
 
             // 求解非线性最小二乘问题
-            _problem.solve(10);
+            _problem.solve(5);
 
             // 解锁最老的pose
             _windows.oldest()->vertex_pose->set_fixed(false);
@@ -96,6 +97,7 @@ namespace vins {
 
         std::cout << "_windows.size() = " << _windows.size() << std::endl;
 
+        // TODO: 若初始化失败, 不能够直接进行margin, 因为chi2和jacobian都没有计算
         // 只有当windows满了才进行滑窗操作
         if (_windows.full()) {
             if (marginalization_flag == MARGIN_OLD) {
