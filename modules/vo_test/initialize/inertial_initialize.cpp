@@ -29,24 +29,24 @@ namespace vins {
             v->parameters().setZero();
         }
 
-        /* 线性问题, 假设ba = 0, bg = 0, 粗略的估算v, alpha, R0 */
-        Problem linear_problem;     // 线性求解
-        shared_ptr<TrivialLoss> trivial_loss = make_shared<TrivialLoss>();  // 不使用鲁棒核函数
+//        /* 线性问题, 假设ba = 0, bg = 0, 粗略的估算v, alpha, R0 */
+//        Problem linear_problem;     // 线性求解
+//        shared_ptr<TrivialLoss> trivial_loss = make_shared<TrivialLoss>();  // 不使用鲁棒核函数
 
-        shared_ptr<VertexVec1> vertex_linear_scale = make_shared<VertexVec1>(); // 尺度因子
-        vertex_linear_scale->parameters().setZero();    // 初始化为0
-//        vertex_linear_scale->parameters()[0] = 1.;
+//        shared_ptr<VertexVec1> vertex_linear_scale = make_shared<VertexVec1>(); // 尺度因子
+//        vertex_linear_scale->parameters().setZero();    // 初始化为0
+////        vertex_linear_scale->parameters()[0] = 1.;
 
-        shared_ptr<VertexBias> vertex_g_b0 = make_shared<VertexBias>(); // 重力加速度
-        vertex_g_b0->parameters().setZero();    // 初始化为0
-//        vertex_g_b0->parameters()[0] = 0.;
-//        vertex_g_b0->parameters()[1] = 0.;
-//        vertex_g_b0->parameters()[2] = -9.8;
+//        shared_ptr<VertexBias> vertex_g_b0 = make_shared<VertexBias>(); // 重力加速度
+//        vertex_g_b0->parameters().setZero();    // 初始化为0
+////        vertex_g_b0->parameters()[0] = 0.;
+////        vertex_g_b0->parameters()[1] = 0.;
+////        vertex_g_b0->parameters()[2] = -9.8;
 
-        // 把顶点加入到problem中
-        linear_problem.add_vertex(vertex_linear_scale);
-        linear_problem.add_vertex(vertex_g_b0);
-        linear_problem.add_vertex(vertex_v[0]);
+//        // 把顶点加入到problem中
+//        linear_problem.add_vertex(vertex_linear_scale);
+//        linear_problem.add_vertex(vertex_g_b0);
+//        linear_problem.add_vertex(vertex_v[0]);
 
         /* 非线性问题, 以线性问题的结果作为初值, 进一步优化出v, alpha, R0, ba, bg */
         Problem nonlinear_problem;  // 非线性求解
@@ -64,6 +64,11 @@ namespace vins {
         nonlinear_problem.add_vertex(vertex_bg);
         nonlinear_problem.add_vertex(vertex_v[0]);
 
+        // 线性计算 Ax=b
+        unsigned long n_state = 4 + 3 * (_windows.size() + 1);
+        MatXX A(MatXX::Zero(n_state, n_state));
+        MatXX b(MatXX::Zero(n_state, 1));
+
         // 遍历windows
         for (unsigned long i = 1; i < _windows.size(); ++i) {
             // 提取位姿
@@ -79,20 +84,20 @@ namespace vins {
             Vec3 tij = p_j - p_i;
             Qd qij = (q_i.inverse() * q_j).normalized();
 
-            /* 线性问题的边 */
-            shared_ptr<EdgeAlignLinear> linear_edge = make_shared<EdgeAlignLinear>(*_windows[i]->imu_integration,
-                                                                                   tij,
-                                                                                   qij,
-                                                                                   q_i);
-            linear_edge->set_loss_function(trivial_loss);
-            linear_edge->add_vertex(vertex_linear_scale);
-            linear_edge->add_vertex(vertex_g_b0);
-            linear_edge->add_vertex(vertex_v[i - 1]);
-            linear_edge->add_vertex(vertex_v[i]);
-
-            // 加入到problem
-            linear_problem.add_edge(linear_edge);
-            linear_problem.add_vertex(vertex_v[i]);
+//            /* 线性问题的边 */
+//            shared_ptr<EdgeAlignLinear> linear_edge = make_shared<EdgeAlignLinear>(*_windows[i]->imu_integration,
+//                                                                                   tij,
+//                                                                                   qij,
+//                                                                                   q_i);
+//            linear_edge->set_loss_function(trivial_loss);
+//            linear_edge->add_vertex(vertex_linear_scale);
+//            linear_edge->add_vertex(vertex_g_b0);
+//            linear_edge->add_vertex(vertex_v[i - 1]);
+//            linear_edge->add_vertex(vertex_v[i]);
+//
+//            // 加入到problem
+//            linear_problem.add_edge(linear_edge);
+//            linear_problem.add_vertex(vertex_v[i]);
 
             /* 非线性问题的边 */
             shared_ptr<EdgeAlign> nonlinear_edge = make_shared<EdgeAlign>(*_windows[i]->imu_integration,
@@ -109,6 +114,43 @@ namespace vins {
             // 加入到problem
             nonlinear_problem.add_edge(nonlinear_edge);
             nonlinear_problem.add_vertex(vertex_v[i]);
+
+            // Ax = b
+            {
+                double dt = _windows[i]->imu_integration->get_sum_dt();
+                Mat33 R_0i_T = q_i.toRotationMatrix().transpose();
+
+                MatXX A_tmp(MatXX::Zero(6, 10));
+                MatXX b_tmp(MatXX::Zero(6, 1));
+
+                A_tmp.block<3, 1>(0, 0) = R_0i_T * tij / 100.;
+                A_tmp.block<3, 3>(3, 1) = -R_0i_T * dt;
+                A_tmp.block<3, 3>(0, 1) =  0.5 * dt * A_tmp.block<3, 3>(3, 1);
+                A_tmp.block<3, 3>(3, 4) = -R_0i_T;
+                A_tmp.block<3, 3>(0, 4) = dt * A_tmp.block<3, 3>(3, 4);
+                A_tmp.block<3, 3>(3, 7) = R_0i_T;
+
+                b_tmp.topRows<3>() = _windows[i]->imu_integration->get_delta_p();
+                b_tmp.bottomRows<3>() = _windows[i]->imu_integration->get_delta_v();
+
+                auto &&cov = _windows[i]->imu_integration->get_covariance();
+                Mat66 cov_tmp;
+                cov_tmp.block<3, 3>(0, 0) = cov.block<3, 3>(0, 0);
+                cov_tmp.block<3, 3>(0, 3) = cov.block<3, 3>(0, 6);
+                cov_tmp.block<3, 3>(3, 3) = cov.block<3, 3>(6, 6);
+                cov_tmp.block<3, 3>(3, 0) = cov.block<3, 3>(6, 0);
+                auto &&cov_tmp_ldlt = cov_tmp.ldlt();
+                MatXX ATA = A_tmp.transpose() * cov_tmp_ldlt.solve(A_tmp);
+                MatXX ATb = A_tmp.transpose() * cov_tmp_ldlt.solve(b_tmp);
+
+                unsigned long index = 4 + 3 * (i - 1);
+                A.block<4, 4>(0, 0) += ATA.block<4, 4>(0, 0);
+                A.block<4, 6>(0, index) += ATA.block<4, 6>(0, 4);
+                A.block<6, 4>(index, 0) += ATA.block<6, 4>(4, 0);
+                A.block<6, 6>(index, index) += ATA.block<6, 6>(4, 4);
+                b.block<4, 1>(0, 0) += ATb.block<4, 1>(0, 0);
+                b.block<6, 1>(index, 0) += ATb.block<6, 1>(4, 0);
+            }
         }
 
         // 当前imu
@@ -126,20 +168,20 @@ namespace vins {
             Vec3 tij = p_j - p_i;
             Qd qij = (q_i.inverse() * q_j).normalized();
 
-            /* 线性问题的边 */
-            shared_ptr<EdgeAlignLinear> linear_edge = make_shared<EdgeAlignLinear>(*_imu_node->imu_integration,
-                                                                                   tij,
-                                                                                   qij,
-                                                                                   q_i);
-            linear_edge->set_loss_function(trivial_loss);
-            linear_edge->add_vertex(vertex_linear_scale);
-            linear_edge->add_vertex(vertex_g_b0);
-            linear_edge->add_vertex(vertex_v[_windows.size() - 1]);
-            linear_edge->add_vertex(vertex_v[_windows.size()]);
-
-            // 加入到problem
-            linear_problem.add_edge(linear_edge);
-            linear_problem.add_vertex(vertex_v[_windows.size()]);
+//            /* 线性问题的边 */
+//            shared_ptr<EdgeAlignLinear> linear_edge = make_shared<EdgeAlignLinear>(*_imu_node->imu_integration,
+//                                                                                   tij,
+//                                                                                   qij,
+//                                                                                   q_i);
+//            linear_edge->set_loss_function(trivial_loss);
+//            linear_edge->add_vertex(vertex_linear_scale);
+//            linear_edge->add_vertex(vertex_g_b0);
+//            linear_edge->add_vertex(vertex_v[_windows.size() - 1]);
+//            linear_edge->add_vertex(vertex_v[_windows.size()]);
+//
+//            // 加入到problem
+//            linear_problem.add_edge(linear_edge);
+//            linear_problem.add_vertex(vertex_v[_windows.size()]);
 
             /* 非线性问题的边 */
             shared_ptr<EdgeAlign> nonlinear_edge = make_shared<EdgeAlign>(*_imu_node->imu_integration,
@@ -156,19 +198,66 @@ namespace vins {
             // 加入到problem
             nonlinear_problem.add_edge(nonlinear_edge);
             nonlinear_problem.add_vertex(vertex_v[_windows.size()]);
+
+            // Ax = b
+            {
+                double dt = _imu_node->imu_integration->get_sum_dt();
+                Mat33 R_0i_T = q_i.toRotationMatrix().transpose();
+
+                MatXX A_tmp(MatXX::Zero(6, 10));
+                MatXX b_tmp(MatXX::Zero(6, 1));
+
+                A_tmp.block<3, 1>(0, 0) = R_0i_T * tij / 100.;
+                A_tmp.block<3, 3>(3, 1) = -R_0i_T * dt;
+                A_tmp.block<3, 3>(0, 1) =  0.5 * dt * A_tmp.block<3, 3>(3, 1);
+                A_tmp.block<3, 3>(3, 4) = -R_0i_T;
+                A_tmp.block<3, 3>(0, 4) = dt * A_tmp.block<3, 3>(3, 4);
+                A_tmp.block<3, 3>(3, 7) = R_0i_T;
+
+                b_tmp.topRows<3>() = _imu_node->imu_integration->get_delta_p();
+                b_tmp.bottomRows<3>() = _imu_node->imu_integration->get_delta_v();
+
+                auto &&cov = _imu_node->imu_integration->get_covariance();
+                Mat66 cov_tmp;
+                cov_tmp.block<3, 3>(0, 0) = cov.block<3, 3>(0, 0);
+                cov_tmp.block<3, 3>(0, 3) = cov.block<3, 3>(0, 6);
+                cov_tmp.block<3, 3>(3, 3) = cov.block<3, 3>(6, 6);
+                cov_tmp.block<3, 3>(3, 0) = cov.block<3, 3>(6, 0);
+                auto &&cov_tmp_ldlt = cov_tmp.ldlt();
+                MatXX ATA = A_tmp.transpose() * cov_tmp_ldlt.solve(A_tmp);
+                MatXX ATb = A_tmp.transpose() * cov_tmp_ldlt.solve(b_tmp);
+
+                unsigned long index = 4 + 3 * (_windows.size() - 1);
+                A.block<4, 4>(0, 0) += ATA.block<4, 4>(0, 0);
+                A.block<4, 6>(0, index) += ATA.block<4, 6>(0, 4);
+                A.block<6, 4>(index, 0) += ATA.block<6, 4>(4, 0);
+                A.block<6, 6>(index, index) += ATA.block<6, 6>(4, 4);
+                b.block<4, 1>(0, 0) += ATb.block<4, 1>(0, 0);
+                b.block<6, 1>(index, 0) += ATb.block<6, 1>(4, 0);
+            }
         }
 
-        // 求解线性问题
-        linear_problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
-        linear_problem.solve(15);
-        linear_problem.solve(15);
+//        // 求解线性问题
+//        linear_problem.set_solver_type(graph_optimization::Problem::SolverType::GAUSS_NEWTON);
+//        linear_problem.solve(30);
+//        linear_problem.solve(30);
+
+        // Ax = b
+//        A *= 1000.;
+//        b *= 1000.;
+        VecX x = A.ldlt().solve(b);
 
         // 通过scale和g_b0的模值判断解是否可用
-        Vec3 v_nav_est = vertex_g_b0->get_parameters();
+//        Vec3 v_nav_est = vertex_g_b0->get_parameters();
+//        Vec3 v_nav_true = IMUIntegration::get_gravity();
+//        double v_nav_est2 = v_nav_est.squaredNorm();
+//        double v_nav_true2 = v_nav_true.squaredNorm();
+//        double scale_est = vertex_linear_scale->get_parameters()[0] / 100.;
+        Vec3 v_nav_est = x.segment<3>(1);
         Vec3 v_nav_true = IMUIntegration::get_gravity();
         double v_nav_est2 = v_nav_est.squaredNorm();
         double v_nav_true2 = v_nav_true.squaredNorm();
-        double scale_est = vertex_linear_scale->get_parameters()[0];
+        double scale_est = x[0] / 100.;
 
         std::cout << "linear scale = " << scale_est << std::endl;
 
@@ -191,15 +280,18 @@ namespace vins {
 
         vertex_scale->set_parameters(Vec1(scale_est));
 
-        for (auto &v : vertex_v) {
-            v->set_parameters(v->get_parameters() / scale_est);
+//        for (auto &v : vertex_v) {
+//            v->set_parameters(v->get_parameters() / scale_est);
+//        }
+        for (unsigned long i = 0; i < _windows.size() + 1; ++i) {
+            vertex_v[i]->set_parameters(x.segment<3>(4 + 3 * i) / scale_est);
         }
 
         // 求解非线性问题
         nonlinear_problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
         vertex_ba->set_fixed();
         vertex_bg->set_fixed();
-        nonlinear_problem.solve(15);
+        nonlinear_problem.solve(30);
 
         // 把求解后的结果赋值到顶点中
         scale_est = vertex_scale->get_parameters()[0];
