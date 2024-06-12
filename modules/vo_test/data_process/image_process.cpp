@@ -346,6 +346,8 @@ namespace vins {
                     std::cout << "v_est: " << _state.v.transpose() << std::endl;
                     std::cout << "ba_est: " << _state.ba.transpose() << std::endl;
                     std::cout << "bg_est: " << _state.bg.transpose() << std::endl;
+
+//                    assert(-1 > 0);
                 }
             }
         } else {
