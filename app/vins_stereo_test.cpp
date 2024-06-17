@@ -7,16 +7,8 @@
 #include <cmath>
 #include <Eigen/Dense>
 
-#include "../modules/vo_test/estimator.h"
-#include "../modules/vo_test/edge/edge_align.h"
-#include "../modules/vo_test/edge/edge_align_linear.h"
-#include "../modules/vo_test/vertex/vertex_vec1.h"
-#include "../modules/vo_test/vertex/vertex_scale.h"
-#include "../modules/vo_test/vertex/vertex_spherical.h"
-#include "../modules/vo_test/vertex/vertex_velocity.h"
-#include "../modules/vo_test/vertex/vertex_bias.h"
 #include "../lib/backend/loss_function.h"
-#include "../modules/vins_stereo//estimator.h"
+#include "../modules/vins_stereo/estimator.h"
 
 using namespace graph_optimization;
 using namespace std;
@@ -94,9 +86,16 @@ public:
         unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> landmarks_map;
         for (unsigned i = 0; i < NUM_LANDMARKS; ++i) {
             p_i = q_wi.inverse() * (_landmarks[i] - t_wi);
+
+            // 左目
             p_c = q_ic.inverse() * (p_i - t_ic);
             f << p_c.x() / p_c.z(), p_c.y() / p_c.z(), 1., 0., 0., 0., 0.;
             landmarks_map[i].emplace_back(0, f);
+
+            // 右目
+            p_c = q_ic.inverse() * (p_i - t_ic - b);
+            f << p_c.x() / p_c.z(), p_c.y() / p_c.z(), 1., 0., 0., 0., 0.;
+            landmarks_map[i].emplace_back(1, f);
         }
 //        for (auto &i : local_index_map) {
 //            p_i = q_wi.inverse() * (_landmarks[i] - t_wi);
@@ -136,6 +135,7 @@ public:
 public:
     Qd q_ic {cos(-0.5 * double(EIGEN_PI) * 0.5), sin(-0.5 * double(EIGEN_PI) * 0.5), 0., 0.};
     Vec3 t_ic {0., 0., 0.};
+    Vec3 b {0.1, 0., 0.};
 };
 
 int main() {
