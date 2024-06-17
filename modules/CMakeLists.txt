@@ -6,5 +6,7 @@
 
 add_subdirectory(fdsi)
 add_subdirectory(vo_test)
+#add_subdirectory(vins_mono)
+add_subdirectory(vins_stereo)
 #add_subdirectory(test_ba)
 #add_subdirectory(vins)
