@@ -1,0 +1,8 @@
+//
+// Created by Cain on 2024/6/12.
+//
+
+#ifndef GRAPHOPTIMIZATION_STATE_H
+#define GRAPHOPTIMIZATION_STATE_H
+
+#endif //GRAPHOPTIMIZATION_STATE_H
