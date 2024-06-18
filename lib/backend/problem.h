@@ -13,6 +13,10 @@
 #include "vertex.h"
 #include "edge.h"
 
+#include <omp.h>
+
+#define USE_OPENMP
+
 namespace graph_optimization {
     class Problem {
     public:
@@ -135,6 +139,11 @@ namespace graph_optimization {
         HashEdge _edges;    ///< 所有的边
         HashVertexIdToEdge _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
         HashVertex _vertices_marg;  ///< 需要被边缘化的顶点
+#ifdef USE_OPENMP
+        constexpr static unsigned int NUM_THREADS = 8;
+        std::vector<std::pair<unsigned long, std::shared_ptr<Edge>>> _edges_vector;
+        std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _vertices_vector;
+#endif
 
         // Gauss-Newton or Levenberg-Marquardt
         double _ni {2.};                 //控制 lambda 缩放大小

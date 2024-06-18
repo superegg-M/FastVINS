@@ -38,8 +38,10 @@ namespace graph_optimization {
     protected:
         ulong _ordering_poses = 0;
         ulong _ordering_landmarks = 0;
-        std::unordered_map<unsigned long, std::shared_ptr<Vertex>> _idx_pose_vertices;        // 以ordering排序的pose顶点
-        std::unordered_map<unsigned long, std::shared_ptr<Vertex>> _idx_landmark_vertices;    // 以ordering排序的landmark顶点
+//        std::unordered_map<unsigned long, std::shared_ptr<Vertex>> _idx_pose_vertices;        // 以ordering排序的pose顶点
+//        std::unordered_map<unsigned long, std::shared_ptr<Vertex>> _idx_landmark_vertices;    // 以ordering排序的landmark顶点
+        std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _idx_pose_vertices;        // 以ordering排序的pose顶点
+        std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _idx_landmark_vertices;    // 以ordering排序的landmark顶点
 
         // 使用schur补求解线性方程组时的过程量
         MatXX _h_pp_schur;

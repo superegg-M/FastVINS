@@ -61,12 +61,12 @@ namespace graph_optimization {
                     continue;
                 }
 
-//                // 如果 delta_x 很小则退出
-//                if (delta_x.squaredNorm() <= eps) {
-//                    is_good_to_stop = true;
-//                    std::cout << "Good: stop iteration due to (delta_x.squaredNorm() <= eps)." << std::endl;
-//                    break;
-//                }
+                // 如果 delta_x 很小则退出
+                if (delta_x.squaredNorm() <= eps) {
+                    is_good_to_stop = true;
+                    std::cout << "Good: stop iteration due to (delta_x.squaredNorm() <= eps)." << std::endl;
+                    break;
+                }
 
                 // x = x + dx
                 update_states(delta_x);

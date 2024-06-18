@@ -9,6 +9,7 @@
 #include <Eigen/Dense>
 #include "tic_toc/tic_toc.h"
 #include "problem.h"
+#include "omp.h"
 
 #define MULTIPLY_HESSIAN_USING_SELF_ADJOINT
 
@@ -89,6 +90,18 @@ namespace graph_optimization {
         }
 
         TicToc t_solve;
+
+#ifdef USE_OPENMP
+        _edges_vector.clear();
+        for (auto &edge: _edges) {
+            _edges_vector.emplace_back(edge);
+        }
+        _vertices_vector.clear();
+        for (auto &vertex : _vertices) {
+            _vertices_vector.emplace_back(vertex);
+        }
+#endif
+
         _t_schur_cost = 0.;
         _t_ldlt_cost = 0.;
         _t_hessian_cost = 0.;
@@ -149,11 +162,42 @@ namespace graph_optimization {
         ulong size = _ordering_generic;
         VecX g(VecX::Zero(size));
 
-        // TODO:: accelate, accelate, accelate
-//#ifdef USE_OPENMP
-//#pragma omp parallel for
-//#endif
+#ifdef USE_OPENMP
+        VecX gs[NUM_THREADS];       ///< 梯度
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            gs[i] = VecX::Zero(size);
+        }
 
+#pragma omp parallel for num_threads(NUM_THREADS)
+        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
+        for (size_t n = 0; n < _edges_vector.size(); ++n) {
+            unsigned int index = omp_get_thread_num();
+
+            auto &&edge = _edges_vector[n];
+            auto &&jacobians = edge.second->jacobians();
+            auto &&verticies = edge.second->vertices();
+            assert(jacobians.size() == verticies.size());
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+                if (v_i->is_ordering_id_invalid()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                double drho;
+                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
+                edge.second->robust_information(drho, robust_information);
+
+                gs[index].segment(index_i, dim_i).noalias() += drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
+            }
+        }
+
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            g += gs[i];
+        }
+#else
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
         for (auto &edge: _edges) {
 //            edge.second->compute_residual();
@@ -165,10 +209,7 @@ namespace graph_optimization {
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
-                if (v_i->is_ordering_id_invalid()) {
-                    std::cout << v_i->type_info() << " with invalid ordering id!!!!" << std::endl;
-                    continue;
-                }
+                if (v_i->is_ordering_id_invalid()) continue;
 
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
@@ -181,7 +222,7 @@ namespace graph_optimization {
                 g.segment(index_i, dim_i).noalias() += drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
             }
         }
-
+#endif
         _gradient = g;
 
         _t_hessian_cost += t_h.toc();
@@ -194,26 +235,28 @@ namespace graph_optimization {
         MatXX H(MatXX::Zero(size, size));       ///< Hessian矩阵
         VecX b(VecX::Zero(size));       ///< 负梯度
 
-        // TODO:: accelate, accelate, accelate
-//#ifdef USE_OPENMP
-//#pragma omp parallel for
-//#endif
+#ifdef USE_OPENMP
+        MatXX Hs[NUM_THREADS];       ///< Hessian矩阵
+        VecX bs[NUM_THREADS];       ///< 负梯度
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            Hs[i] = MatXX::Zero(size, size);
+            bs[i] = VecX::Zero(size);
+        }
 
         // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
-        for (auto &edge: _edges) {
-//            edge.second->compute_residual();
-//            edge.second->compute_jacobians();
+//        omp_set_num_threads(NUM_THREADS);
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (size_t n = 0; n < _edges_vector.size(); ++n) {//for (auto &edge: edges) {
+            unsigned int index = omp_get_thread_num();
 
+            auto &&edge = _edges_vector[n];
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
             assert(jacobians.size() == verticies.size());
             for (size_t i = 0; i < verticies.size(); ++i) {
                 auto &&v_i = verticies[i];
                 if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
-                if (v_i->is_ordering_id_invalid()) {
-                    std::cout << v_i->type_info() << " with invalid ordering id!!!!" << std::endl;
-                    continue;
-                }
+                if (v_i->is_ordering_id_invalid()) continue;
 
                 auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
@@ -227,16 +270,57 @@ namespace graph_optimization {
                 for (size_t j = i; j < verticies.size(); ++j) {
                     auto &&v_j = verticies[j];
                     if (v_j->is_fixed()) continue;
-                    if (v_j->is_ordering_id_invalid()) {
-                        std::cout << v_j->type_info() << " with invalid ordering id!!!!" << std::endl;
-                        continue;
-                    }
+                    if (v_j->is_ordering_id_invalid()) continue;
 
                     auto &&jacobian_j = jacobians[j];
                     ulong index_j = v_j->ordering_id();
                     ulong dim_j = v_j->local_dimension();
 
-//                    assert(v_j->ordering_id() != -1);
+                    MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
+                    // 所有的信息矩阵叠加起来
+                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
+                    if (j != i) {
+                        // 对称的下三角
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
+                    }
+                }
+                bs[index].segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge.second->information() * edge.second->residual();
+            }
+        }
+
+        for (unsigned int i = 0; i < NUM_THREADS; ++i) {
+            H += Hs[i];
+            b += bs[i];
+        }
+#else
+        // 遍历每个残差，并计算他们的雅克比，得到最后的 H = J^T * J
+        for (auto &edge: edges) {
+            auto &&jacobians = edge.second->jacobians();
+            auto &&verticies = edge.second->vertices();
+            assert(jacobians.size() == verticies.size());
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+                if (v_i->is_ordering_id_invalid()) continue;
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                double drho;
+                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
+                edge.second->robust_information(drho, robust_information);
+
+                MatXX JtW = jacobian_i.transpose() * robust_information;
+                for (size_t j = i; j < verticies.size(); ++j) {
+                    auto &&v_j = verticies[j];
+                    if (v_j->is_fixed()) continue;
+                    if (v_j->is_ordering_id_invalid()) continue;
+
+                    auto &&jacobian_j = jacobians[j];
+                    ulong index_j = v_j->ordering_id();
+                    ulong dim_j = v_j->local_dimension();
+
                     MatXX hessian = JtW * jacobian_j;   // TODO: 这里能继续优化, 因为J'*W*J也是对称矩阵
                     // 所有的信息矩阵叠加起来
                     H.block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
@@ -249,6 +333,7 @@ namespace graph_optimization {
             }
 
         }
+#endif
 
         _hessian = H;
         _b = b;
@@ -267,6 +352,20 @@ namespace graph_optimization {
             VecX b_prior_tmp = _b_prior;
 
             // 对所有没有被fix的顶点添加先验信息
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS)
+            for (size_t n = 0; n < _vertices_vector.size(); ++n) {
+                auto &&vertex = _vertices_vector[n];
+                if (vertex.second->is_fixed()) {
+                    ulong idx = vertex.second->ordering_id();
+                    ulong dim = vertex.second->local_dimension();
+                    H_prior_tmp.block(idx,0, dim, H_prior_tmp.cols()).setZero();
+                    H_prior_tmp.block(0,idx, H_prior_tmp.rows(), dim).setZero();
+                    b_prior_tmp.segment(idx,dim).setZero();
+//                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
+                }
+            }
+#else
             for (const auto& vertex: _vertices) {
                 if (vertex.second->is_fixed()) {
                     ulong idx = vertex.second->ordering_id();
@@ -277,6 +376,9 @@ namespace graph_optimization {
 //                std::cout << " fixed prior, set the Hprior and bprior part to zero, idx: "<<idx <<" dim: "<<dim<<std::endl;
                 }
             }
+#endif
+            std::cout << _hessian.rows() << ", " << _hessian.cols() << std::endl;
+            std::cout << H_prior_tmp.rows() << ", " << H_prior_tmp.cols() << std::endl;
             _hessian += H_prior_tmp;
             _b += b_prior_tmp;
         }
@@ -304,12 +406,10 @@ namespace graph_optimization {
 #ifdef HESSIAN_NORM_SQUARE_USING_GRAPH
         double norm2 = 0.;
 
-        // TODO:: accelate, accelate, accelate
-//#ifdef USE_OPENMP
-//#pragma omp parallel for
-//#endif
-
-        for (auto &edge: _edges) {
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS) reduction(+:norm2)
+        for (size_t n = 0; n < _edges_vector.size(); ++n) {
+            auto &&edge = _edges_vector[n];
             auto &&jacobians = edge.second->jacobians();
             auto &&verticies = edge.second->vertices();
             assert(jacobians.size() == verticies.size());
@@ -329,6 +429,28 @@ namespace graph_optimization {
                 norm2 += Jx.transpose() * robust_information * Jx;
             }
         }
+#else
+    for (auto &edge: _edges) {
+            auto &&jacobians = edge.second->jacobians();
+            auto &&verticies = edge.second->vertices();
+            assert(jacobians.size() == verticies.size());
+            for (size_t i = 0; i < verticies.size(); ++i) {
+                auto &&v_i = verticies[i];
+                if (v_i->is_fixed()) continue;    // Hessian 里不需要添加它的信息，也就是它的雅克比为 0
+
+                auto &&jacobian_i = jacobians[i];
+                ulong index_i = v_i->ordering_id();
+                ulong dim_i = v_i->local_dimension();
+
+                double drho;
+                MatXX robust_information(edge.second->information().rows(),edge.second->information().cols());
+                edge.second->robust_information(drho, robust_information);
+
+                VecX Jx = jacobian_i * x.segment(index_i, dim_i);
+                norm2 += Jx.transpose() * robust_information * Jx;
+            }
+        }
+#endif
 
         return norm2;
 #else
@@ -370,16 +492,27 @@ namespace graph_optimization {
     }
 
     void Problem::update_states(const VecX &delta_x) {
-        for (auto &vertex: _vertices) {
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (size_t n = 0; n < _vertices_vector.size(); ++n) {
+            auto &&vertex = _vertices_vector[n];
             vertex.second->save_parameters();
 
-            ulong idx = vertex.second->ordering_id();
-            ulong dim = vertex.second->local_dimension();
-            VecX delta = delta_x.segment(idx, dim);
+            VecX delta = delta_x.segment(vertex.second->ordering_id(), vertex.second->local_dimension());
 
             // 所有的参数 x 叠加一个增量  x_{k+1} = x_{k} + delta_x
             vertex.second->plus(delta);
         }
+#else
+        for (auto &vertex: _vertices) {
+            vertex.second->save_parameters();
+
+            VecX delta = delta_x.segment(vertex.second->ordering_id(), vertex.second->local_dimension());
+
+            // 所有的参数 x 叠加一个增量  x_{k+1} = x_{k} + delta_x
+            vertex.second->plus(delta);
+        }
+#endif
 
         // 利用 delta_x 更新先验信息
         update_prior(delta_x);
@@ -395,9 +528,16 @@ namespace graph_optimization {
     void Problem::update_residual() {
         TicToc t_r;
 
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (size_t n = 0; n < _edges_vector.size(); ++n) {
+            _edges_vector[n].second->compute_residual();
+        }
+#else
         for (auto &edge: _edges) {
             edge.second->compute_residual();
         }
+#endif
 
         _t_residual_cost += t_r.toc();
     }
@@ -405,9 +545,16 @@ namespace graph_optimization {
     void Problem::update_jacobian() {
         TicToc t_j;
 
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (size_t n = 0; n < _edges_vector.size(); ++n) {
+            _edges_vector[n].second->compute_jacobians();
+        }
+#else
         for (auto &edge: _edges) {
             edge.second->compute_jacobians();
         }
+#endif
 
         _t_jacobian_cost += t_j.toc();
     }
@@ -416,16 +563,36 @@ namespace graph_optimization {
         TicToc t_c;
 
         _chi2 = 0.;
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS) reduction(+:_chi2)
+        for (size_t n = 0; n < _edges_vector.size(); ++n) {
+            _edges_vector[n].second->compute_chi2();
+            _chi2 += _edges_vector[n].second->get_robust_chi2();
+        }
+#else
         for (auto &edge: _edges) {
             edge.second->compute_chi2();
             _chi2 += edge.second->get_robust_chi2();
         }
+#endif
         _chi2 *= 0.5;
 
         _t_chi2_cost += t_c.toc();
     }
 
     void Problem::rollback_states(const VecX &delta_x) {
+#ifdef USE_OPENMP
+#pragma omp parallel for num_threads(NUM_THREADS)
+        for (size_t n = 0; n < _vertices_vector.size(); ++n) {
+            auto &&vertex = _vertices_vector[n];
+
+//            // 之前的增量加了后使得损失函数增加了，我们应该不要这次迭代结果，所以把之前加上的量减去。
+//            VecX delta = delta_x.segment(vertex.second->ordering_id(), vertex.second->local_dimension());
+//            vertex.second->plus(-delta);
+
+            vertex.second->load_parameters();
+        }
+#else
         for (auto &vertex: _vertices) {
             ulong idx = vertex.second->ordering_id();
             ulong dim = vertex.second->local_dimension();
@@ -435,6 +602,7 @@ namespace graph_optimization {
 //            vertex.second->plus(-delta);
             vertex.second->load_parameters();
         }
+#endif
 
         _b_prior = _b_prior_bp;
     }
