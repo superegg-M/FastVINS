@@ -15,9 +15,11 @@ include_directories("${GRAPH_OPTIMIZATION_SOURCE_DIR}/thirdparty/Sophus")
 add_subdirectory(lib)
 add_subdirectory(modules)
 
-target_link_libraries(backend so_plus tic_toc)
+find_package (OpenMP REQUIRED)
 
-target_link_libraries(fdsi backend so_plus tic_toc)
+target_link_libraries(backend so_plus tic_toc OpenMP::OpenMP_CXX)
+
+target_link_libraries(fdsi backend so_plus tic_toc OpenMP::OpenMP_CXX)
 
 #target_link_libraries(vo_test backend so_plus tic_toc)
 
@@ -35,6 +37,6 @@ target_link_libraries(fdsi backend so_plus tic_toc)
 #add_executable(GraphOptimization app/vio_test2.cpp)
 #target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc vo_test)
 
-target_link_libraries(vins_stereo backend so_plus tic_toc)
+target_link_libraries(vins_stereo backend so_plus tic_toc OpenMP::OpenMP_CXX)
 add_executable(GraphOptimization app/vins_stereo_test.cpp)
-target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc vins_stereo)
+target_link_libraries(GraphOptimization fdsi backend so_plus tic_toc vins_stereo OpenMP::OpenMP_CXX)
