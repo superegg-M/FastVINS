@@ -103,28 +103,31 @@ namespace vins {
 
     void Estimator::slide_window() {
         TicToc t_margin;
-
-        std::cout << "slide_window(): _windows.size() = " << _windows.size() << std::endl;
+        double t_depth = 0., t_problem = 0., t_delete = 0., t_opt = 0.;
 
         // TODO: 若初始化失败, 不能够直接进行margin, 因为chi2和jacobian都没有计算
         // 只有当windows满了才进行滑窗操作
         if (_windows.full()) {
             if (marginalization_flag == MARGIN_OLD) {
-                std::cout << "MARGIN_OLD" << std::endl;
+//                std::cout << "MARGIN_OLD" << std::endl;
 
                 // 弹出windows中最老的imu
                 ImuNode *imu_oldest {nullptr};
                 _windows.pop_oldest(imu_oldest);
 
                 // 边缘化掉oldest imu。在margin时会把pose和motion的顶点从problem中删除，同时与pose和motion相关的边也会被全部删除
+                TicToc clock_opt;
                 _problem.marginalize(imu_oldest->vertex_pose, imu_oldest->vertex_motion);
+                t_opt += clock_opt.toc();
 
                 // 遍历被删除的imu的所有特征点，在特征点的imu队列中，删除该imu
                 for (auto &feature_in_cameras : imu_oldest->features_in_cameras) {
+                    TicToc clock_depth;
                     auto &&feature_id = feature_in_cameras.first;
                     auto &&feature_it = _feature_map.find(feature_id);
                     if (feature_it == _feature_map.end()) {
 //                        std::cout << "!!!!!!!! Can't find feature id in feature map when marg oldest !!!!!!!!!" << std::endl;
+                        t_depth += clock_depth.toc();
                         continue;
                     }
 
@@ -138,6 +141,7 @@ namespace vins {
 
                     // 若特征点的keyframe小于2，则删除该特征点, 否则需要为特征点重新计算深度并且重新构建重投影edge,
                     if (imu_deque.size() < 2 || feature_node->is_outlier || !feature_node->is_triangulated) {
+                        TicToc clock_delete;
                         // 在map中删除特征点
                         _feature_map.erase(feature_id);
 
@@ -149,6 +153,8 @@ namespace vins {
 
                         // 释放特征点node的空间
                         delete feature_node;
+                        t_depth += clock_depth.toc();
+                        t_delete += clock_delete.toc();
                     } else {
                         /*
                          * 1. 从旧的host imu还原出landmark的基于world系的3d坐标
@@ -200,11 +206,14 @@ namespace vins {
 
                             // 释放特征点node的空间
                             delete feature_node;
-
+                            t_depth += clock_depth.toc();
                             continue;
                         }
 
                         feature_node->vertex_landmark->set_parameters(Vec1(1. / depth));
+                        t_depth += clock_depth.toc();
+
+                        TicToc clock_problem;
 
                         // 删除landmark及其相关的edge
                         _problem.remove_vertex(feature_node->vertex_landmark);
@@ -292,12 +301,14 @@ namespace vins {
                             edge_reproj22->add_vertex(_vertex_ext[curr_cameras[i].first]);
                             _problem.add_edge(edge_reproj22);
                         }
+
+                        t_problem += clock_problem.toc();
                     }
                 }
                 // 释放imu node的空间
                 delete imu_oldest;
             } else {
-                std::cout << "MARGIN_NEW" << std::endl;
+//                std::cout << "MARGIN_NEW" << std::endl;
 
                 // 弹出windows中最新的imu
                 ImuNode *imu_newest {nullptr};
@@ -386,6 +397,15 @@ namespace vins {
 
         auto margin_cost = t_margin.toc();
         std::cout << "margin_cost = " << margin_cost << std::endl;
+        std::cout << "t_depth = " << t_depth << std::endl;
+        std::cout << "t_problem = " << t_problem << std::endl;
+        std::cout << "t_opt = " << t_opt << std::endl;
+        std::cout << "t_delete = " << t_delete << std::endl;
+        if (marginalization_flag == MARGIN_OLD) {
+            std::cout << "MARGIN_OLD" << std::endl;
+        } else {
+            std::cout << "MARGIN_NEW" << std::endl;
+        }
     }
 
     bool Estimator::remove_outlier_landmarks(unsigned int iteration) {
