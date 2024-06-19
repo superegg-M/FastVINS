@@ -108,7 +108,7 @@ public:
     }
 
 public:
-    constexpr static unsigned int NUM_LANDMARKS {200};
+    constexpr static unsigned int NUM_LANDMARKS {100};
 
 public:
     unsigned int _num_data;
