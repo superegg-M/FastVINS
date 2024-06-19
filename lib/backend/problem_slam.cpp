@@ -16,6 +16,7 @@ namespace graph_optimization {
         * marginalize 所有和 frame 相连的 edge: imu factor, projection factor
         * */
     bool ProblemSLAM::marginalize(const std::shared_ptr<Vertex>& vertex_pose, const std::shared_ptr<Vertex>& vertex_motion) {
+//        TicToc t1;
         // 重新计算一篇ordering
 //        initialize_ordering();
         ulong state_dim = _ordering_poses;
@@ -50,6 +51,14 @@ namespace graph_optimization {
         }
 #endif
 
+//        double ms1 = t1.toc();
+//        std::cout << "t1 = " << ms1 << std::endl;
+////        std::cout << "marginalized_edges.size() = " << marginalized_edges.size() << ", ";
+////        std::cout << "marginalized_landmark.size() = " << marginalized_landmark.size() << ", ";
+////        std::cout << "marginalized_landmark_dim = " << marginalized_landmark_size << std::endl;
+//
+//        TicToc t2;
+
         // 计算所需marginalize的edge的hessian
         ulong cols = state_dim + marginalized_landmark_size;
         MatXX h_state_landmark(MatXX::Zero(cols, cols));
@@ -78,13 +87,14 @@ namespace graph_optimization {
                 if (v_i->is_fixed()) continue;
                 if (v_i->is_ordering_id_invalid()) continue;
 
-                auto jacobian_i = jacobians[i];
+                auto &&jacobian_i = jacobians[i];
                 ulong index_i = v_i->ordering_id();
                 ulong dim_i = v_i->local_dimension();
 
                 double drho;
                 MatXX robust_information(edge->information().rows(), edge->information().cols());
                 edge->robust_information(drho, robust_information);
+
                 MatXX JtW = jacobian_i.transpose() * robust_information;
                 for (size_t j = i; j < vertices.size(); ++j) {
                     auto &&v_j = vertices[j];
@@ -97,15 +107,14 @@ namespace graph_optimization {
 
                     MatXX hessian = JtW * jacobian_j;
 
-                    assert(hessian.rows() == v_i->local_dimension() && hessian.cols() == v_j->local_dimension());
                     // 所有的信息矩阵叠加起来
-                    Hs[index].block(index_i, index_j, dim_i, dim_j) += hessian;
+                    Hs[index].block(index_i, index_j, dim_i, dim_j).noalias() += hessian;
                     if (j != i) {
                         // 对称的下三角
-                        Hs[index].block(index_j, index_i, dim_j, dim_i) += hessian.transpose();
+                        Hs[index].block(index_j, index_i, dim_j, dim_i).noalias() += hessian.transpose();
                     }
                 }
-                bs[index].segment(index_i, dim_i) -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
+                bs[index].segment(index_i, dim_i).noalias() -= drho * jacobian_i.transpose() * edge->information() * edge->residual();
             }
         }
 
@@ -158,6 +167,12 @@ namespace graph_optimization {
             }
         }
 #endif
+
+//        double ms2 = t2.toc();
+//        std::cout << "t2 = " << ms2 << std::endl;
+//
+//        TicToc t3;
+
         // marginalize与边连接的landmark
         MatXX h_state_schur;
         VecX b_state_schur;
@@ -178,7 +193,7 @@ namespace graph_optimization {
                 ulong size = landmark_vertex.second->local_dimension();
                 if (size == 1) {
                     if (Hll(idx, idx) > 1e-12) {
-                        temp_H.row(idx) = Hsl.col(idx) / Hll(idx, idx);
+                        temp_H.row(idx).noalias() = Hsl.col(idx) / Hll(idx, idx);
                         temp_b(idx) = bll(idx) / Hll(idx, idx);
                     } else {
                         temp_H.row(idx).setZero();
@@ -187,8 +202,8 @@ namespace graph_optimization {
                 } else {
                     auto Hmm_ldlt = Hll.block(idx, idx, size, size).ldlt();
                     if (Hmm_ldlt.info() == Eigen::Success) {
-                        temp_H.block(idx, 0, size, state_dim) = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
-                        temp_b.segment(idx, size) = Hmm_ldlt.solve(bll.segment(idx, size));
+                        temp_H.block(idx, 0, size, state_dim).noalias() = Hmm_ldlt.solve(Hsl.block(0, idx, state_dim, size).transpose());
+                        temp_b.segment(idx, size).noalias() = Hmm_ldlt.solve(bll.segment(idx, size));
                     } else {
                         temp_H.block(idx, 0, size, state_dim).setZero();
                         temp_b.segment(idx, size).setZero();
@@ -249,6 +264,11 @@ namespace graph_optimization {
             b_state_schur = b_state_landmark;
         }
 
+//        double ms3 = t3.toc();
+//        std::cout << "t3 = " << ms3 << std::endl;
+//
+//        TicToc t4;
+
         // 叠加之前的先验
         if(_h_prior.rows() > 0) {
 //            std::cout << "h_state_schur.size: " << h_state_schur.rows() << ", " << h_state_schur.cols() << std::endl;
@@ -290,6 +310,11 @@ namespace graph_optimization {
             move_vertex_to_bottom(vertex_motion);
         }
         move_vertex_to_bottom(vertex_pose);
+
+//        double ms4 = t4.toc();
+//        std::cout << "t4 = " << ms4 << std::endl;
+//
+//        TicToc t5;
 
         // marginalize与边相连的所有pose和motion顶点
         auto marginalize_bottom_vertex = [&](const std::shared_ptr<Vertex> &vertex) {
@@ -365,11 +390,19 @@ namespace graph_optimization {
         _h_prior = h_state_schur;
         _b_prior = b_state_schur;
 
+//        double ms5 = t5.toc();
+//        std::cout << "t5 = " << ms5 << std::endl;
+//
+//        TicToc t6;
+
         // 移除顶点
         remove_vertex(vertex_pose);
         if (vertex_motion) {
             remove_vertex(vertex_motion);
         }
+
+//        double ms6 = t6.toc();
+//        std::cout << "t6 = " << ms6 << std::endl;
 
         /*
          * 不能在这里移除路标点，因为路标在别的frame中，可能能重新构建重投影误差
