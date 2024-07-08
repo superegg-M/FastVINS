@@ -21,7 +21,7 @@ namespace system_identification {
         class FDSISolver {
         public:
             EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-            explicit FDSISolver(const std::vector<double> &parameters) {
+            explicit FDSISolver(const std::vector<double> &parameters, bool delay=true) : _delay(delay) {
                 for (unsigned i = 0; i < NP + NZ + 2; ++i) {
                     _parameters(i, 0) = parameters[i];
                 }
@@ -31,6 +31,7 @@ namespace system_identification {
             void operator()(const std::vector<double> &re, const std::vector<double> &im, const std::vector<double> &w, const std::vector<unsigned> &index);
 
         private:
+            bool _delay;
             Eigen::Matrix<double, NP+NZ+2, 1> _parameters;
         };
 
@@ -49,7 +50,7 @@ namespace system_identification {
 
             for (auto &i : index) {
                 // 每个观测对应的残差函数
-                std::shared_ptr<FDSIEdge<NP, NZ, NI>> edge(new FDSIEdge<NP, NZ, NI>(w[i], re[i], im[i]));
+                std::shared_ptr<FDSIEdge<NP, NZ, NI>> edge(new FDSIEdge<NP, NZ, NI>(w[i], re[i], im[i], _delay));
                 std::vector<std::shared_ptr<Vertex>> edge_vertex;
                 edge_vertex.push_back(vertex);
                 edge->set_vertices(edge_vertex);
@@ -61,6 +62,8 @@ namespace system_identification {
             std::cout<<"\nTest CurveFitting start..."<<std::endl;
             /// 使用 LM 求解
             problem.set_solver_type(graph_optimization::Problem::SolverType::LEVENBERG_MARQUARDT);
+            problem.solve(30);
+            problem.solve(30);
             problem.solve(30);
 
             std::cout << "-------After optimization, we got these parameters :" << std::endl;

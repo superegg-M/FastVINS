@@ -48,7 +48,7 @@ int main() {
     fdsi_solver(re_buff, im_buff, w_buff, index_buff);
 
     vector<double> parameters2 {0.02, 0.0004, 200., 0.005};
-    system_identification::frequency_domain::FDSISolver<2, 0, 1> fdsi_solver2(parameters2);
+    system_identification::frequency_domain::FDSISolver<2, 1, 1> fdsi_solver2(parameters2, false);
     fdsi_solver2(re_buff, im_buff, w_buff, index_buff);
 
     return 0;

@@ -20,8 +20,8 @@ namespace system_identification {
         class FDSIEdge: public Edge {
         public:
             EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-            FDSIEdge(double w, double re, double im)
-                    : Edge(2, 1, std::vector<std::string>{"FDSI"}, LossFunction::Type::CAUCHY), _w(w), _re(re), _im(im) {}
+            FDSIEdge(double w, double re, double im, bool delay=true)
+                    : Edge(2, 1, std::vector<std::string>{"FDSI"}, LossFunction::Type::CAUCHY), _delay(delay), _w(w), _re(re), _im(im) {}
 
             // 计算曲线模型误差
             void compute_residual() override;
@@ -38,6 +38,7 @@ namespace system_identification {
             void calculate_wr_wi(std::vector<double> &wr, std::vector<double> &wi) const;
 
         private:
+            bool _delay;
             double _w, _re, _im;
         };
 
@@ -203,8 +204,8 @@ namespace system_identification {
                 jacobians(0, NP + i) = part_j(0, 2) * num_wr[i] + part_j(0, 3) * num_wi[i];
                 jacobians(1, NP + i) = part_j(1, 2) * num_wr[i] + part_j(1, 3) * num_wi[i];
             }
-            jacobians(0, NP + NZ + 1) = part_j(0, 4);
-            jacobians(1, NP + NZ + 1) = part_j(1, 4);
+            jacobians(0, NP + NZ + 1) = part_j(0, 4) * (_delay ? 1. : 0.);
+            jacobians(1, NP + NZ + 1) = part_j(1, 4) * (_delay ? 1. : 0.);
 
             _jacobians[0] = jacobians;
         }
