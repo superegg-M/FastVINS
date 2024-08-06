@@ -82,13 +82,12 @@ namespace vins {
         void local_bundle_adjustment(vector<shared_ptr<VertexPose>> *fixed_poses=nullptr);
 
         void slide_window();
+        void slide_window_only();
         void solve_odometry();
 
-        void optimization();
+        graph_optimization::ProblemSLAM optimization(const unordered_map<unsigned long, vector<pair<unsigned long, Vec7>>> &image);
 
-        void problem_solve();
-
-        bool remove_outlier_landmarks(unsigned int iteration=5);
+        bool remove_outlier_landmarks();
         bool remove_untriangulated_landmarks();
 
         enum SolverFlag {

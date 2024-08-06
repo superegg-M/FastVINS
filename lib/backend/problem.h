@@ -140,7 +140,7 @@ namespace graph_optimization {
         HashVertexIdToEdge _vertex_to_edge;     ///< pair(顶点id, 与该顶点相连的所有边)
         HashVertex _vertices_marg;  ///< 需要被边缘化的顶点
 #ifdef USE_OPENMP
-        constexpr static unsigned int NUM_THREADS = 8;
+        constexpr static unsigned int NUM_THREADS = 4;
         std::vector<std::pair<unsigned long, std::shared_ptr<Edge>>> _edges_vector;
         std::vector<std::pair<unsigned long, std::shared_ptr<Vertex>>> _vertices_vector;
 #endif

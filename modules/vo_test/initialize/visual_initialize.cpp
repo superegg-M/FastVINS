@@ -171,7 +171,7 @@ namespace vins {
 //        // Local Bundle Adjustment
 //        local_bundle_adjustment(&fixed_poses);
 
-        remove_outlier_landmarks();
+        // remove_outlier_landmarks();
 
         for (unsigned long i = 0; i < _windows.size(); ++i) {
             auto &&pose = _windows[i]->vertex_pose->get_parameters();

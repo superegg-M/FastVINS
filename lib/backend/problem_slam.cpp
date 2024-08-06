@@ -395,11 +395,11 @@ namespace graph_optimization {
 //
 //        TicToc t6;
 
-        // 移除顶点
-        remove_vertex(vertex_pose);
-        if (vertex_motion) {
-            remove_vertex(vertex_motion);
-        }
+        // // 移除顶点
+        // remove_vertex(vertex_pose);
+        // if (vertex_motion) {
+        //     remove_vertex(vertex_motion);
+        // }
 
 //        double ms6 = t6.toc();
 //        std::cout << "t6 = " << ms6 << std::endl;
